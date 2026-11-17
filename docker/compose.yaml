@@ -1,0 +1,38 @@
+# Assist Router trainer studio on the GPU machine. Start with docker/install-ubuntu.sh (it writes
+# config/env and .env). Starts by itself with the machine (restart: unless-stopped, Docker at boot).
+name: assist-router-trainer
+
+services:
+  studio:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+        ROUTER_REF: ${ROUTER_REF:-v0.1.7}
+        TORCH_SPEC: ${TORCH_SPEC:-torch==2.14.1}
+    image: assist-router-trainer:latest
+    user: "${UID:-1000}:${GID:-1000}"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8790/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    env_file: ./config/env          # ROUTER_TRAINER_UI_AUTH=admin:<password> (mode 600)
+    ports:
+      - "${STUDIO_PORT:-8790}:8790"
+    volumes:
+      # workspace (inputs, tests, datasets, runs, the trainer's Ollama models), Hugging Face downloads
+      - ${STUDIO_DATA:-./data}:/data
+      - ./config:/home/trainer/.config/router-trainer   # the login secret
+    shm_size: 16gb                  # PyTorch data loading
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

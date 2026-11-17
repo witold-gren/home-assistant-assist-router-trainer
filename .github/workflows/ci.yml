@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: home-assistant-assist-router-trainer
+      # the trainer imports the integration's prompts and test tools
+      - uses: actions/checkout@v4
+        with:
+          repository: witold-gren/home-assistant-assist-router
+          path: home-assistant-assist-router
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        working-directory: home-assistant-assist-router-trainer
+        run: |
+          pip install -r ../home-assistant-assist-router/requirements_test.txt
+          pip install -e ".[data,dev]"
+      - name: Ruff
+        working-directory: home-assistant-assist-router-trainer
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Tests
+        working-directory: home-assistant-assist-router-trainer
+        run: python -m pytest -q

@@ -1,0 +1,101 @@
+# The guide of the trainer studio: built into the Docker image (the studio's "?" opens it at /docs/, also
+# without the internet) and into "Home documents" (docs-hub, type mkdocs). make docs / make docs-serve.
+# Pages: docs/*.md in English, docs/*.pl.md in Polish beside them (the same {#anchors} in both).
+site_name: Assist Router trainer
+site_description: A studio on the GPU machine that fine-tunes a smaller Assist Router model on your home.
+# the public address; `make docs-serve` sets SITE_URL to the local one, so /pl/... works there
+site_url: !ENV [SITE_URL, "https://witold-gren.github.io/home-assistant-assist-router-trainer/"]
+docs_dir: docs
+strict: true
+
+exclude_docs: |
+  /home-assistant/
+
+hooks:
+  - dev/docs_site.py
+
+theme:
+  name: material
+  logo: assets/icon.svg
+  favicon: assets/icon.svg
+  features:
+    - navigation.tracking
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+
+plugins:
+  - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: pl
+          name: Polski
+          build: true
+          site_name: Trener Assist Routera
+          site_description: Studio na maszynie z GPU, które douczy mniejszy model Assist Routera na Twoim domu.
+          nav_translations:
+            What it is: Co to jest
+            Installation: Instalacja
+            The screen: Ekran
+            Step by step: Krok po kroku
+            Doing it well: Jak robić to dobrze
+            Home Assistant and power: Home Assistant i zasilanie
+            FAQ: FAQ
+            One standard: Jeden standard
+            Changelog: Lista zmian
+
+nav:
+  - What it is: index.md
+  - Installation: installation.md
+  - The screen: screen.md
+  - Step by step: steps.md
+  - Doing it well: good-practice.md
+  - Home Assistant and power: home-assistant.md
+  - FAQ: faq.md
+  - One standard: standard.md
+  - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+
+validation:
+  links:
+    absolute_links: ignore

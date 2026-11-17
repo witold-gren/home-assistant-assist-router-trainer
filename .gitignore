@@ -1,0 +1,27 @@
+# Private home data: snapshots, generated datasets, trained models, results, settings.
+# Never commit anything from here - it holds names, rooms, calendars and the HA token path.
+workspace/
+workspace-*/
+# the container's data, login and settings (docker/install-ubuntu.sh)
+docker/data/
+docker/config/
+docker/.env
+
+# downloaded tools (Ollama, llama.cpp) - scripts/setup.sh
+tools/
+
+.venv/
+.venv-*/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# backups of edited files (kept locally)
+backup/
+
+# the guide: the built site and the changelog copies (dev/docs_site.py)
+site/
+docs/changelog*.md
+# this machine's settings of the Makefile
+Makefile.local

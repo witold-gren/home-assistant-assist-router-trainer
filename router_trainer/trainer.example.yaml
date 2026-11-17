@@ -1,0 +1,127 @@
+# Assist Router trainer - settings. `router-trainer init` copies this file to
+# workspace/trainer.yaml; edit that copy (it stays out of git, like everything in workspace/).
+# Relative paths are relative to the workspace folder.
+
+home_assistant:
+  url: http://homeassistant.local:8123
+  token_file: ~/.ha_token          # long-lived access token, chmod 600
+  time_zone: Europe/Warsaw         # HA time zone ("now" in the answer prompt)
+
+# Assist Router code (the trainer imports its prompts, schemas and test tools, so a model learns
+# exactly what the integration sends). `auto`: the version installed in Home Assistant, fetched
+# by the panel into <workspace>/router/ (a local checkout next to the trainer until then);
+# or a path, relative to the trainer repository.
+router_repo: auto
+
+# Copies of your HA files ("Fetch from Home Assistant": the Assist Router export command)
+inputs:
+  router: inputs/router.yaml                  # /config/assist/router.yaml
+  tests: inputs/model_test.yaml               # frozen test cases - never used for training
+  test_data: inputs/model_test_data.yaml      # snapshot of the test (tools/snapshot_data.py)
+  log: inputs/unrecognized_commands.csv       # real questions (only those unlike the test)
+  ha_config: inputs/ha_config                 # automations.yaml + packages/ (sentence triggers)
+
+ollama:
+  jetson: http://jetson.local:11434     # Ollama used by Home Assistant: evaluation + upload
+  teacher: gemma4:26b                   # writes paraphrases and reference answers; judges the test
+  # writes the generated test - another model than the teacher, so the test does not favour
+  # the style of the training data
+  test_writer: SpeakLeash/bielik-11b-v3.0-instruct:Q4_K_M
+  local_port: 11535                     # Ollama of the trainer (tools/ollama) on the GPU box
+  version: 0.34.1                       # same version as the home Ollama (scripts/setup.sh)
+
+generate:
+  seed: 42
+  router:
+    paraphrases_per_topic: 300   # sentences written by the teacher per topic
+    per_template: 30             # sentences per hassil template of your automations
+    native_intents: 1500         # built-in HA intents with your names (control / weather / other)
+    knowledge: 800               # general knowledge questions (topic with `search`)
+    gibberish: 300               # speech recognition gibberish (topic with `unclear`)
+    log_questions: true          # real questions from the log that are unlike the test
+    max_per_topic: 900
+    min_per_topic: 250
+    noise: 0.3                   # share with speech-recognition noise (lower case, no accents, typos)
+  control:
+    labels: 1500                 # commands planned from your home (intent, area, device, value)
+    sentences_per_label: 3       # the teacher writes them; kept only if it parses them back the same
+  answers:
+    given: 600                   # made-up data with facts computed in Python (sums, hours, days)
+    live_per_topic: 40           # questions per topic answered from your live HA data
+    wikipedia: 300               # summaries of random articles (never the test articles)
+
+test:                    # router-trainer testgen (the generated test)
+  seed: 1234
+  router_per_topic: 12     # real log questions first, then the writer's
+  control: 150
+  control_overhead: 4      # commands planned per kept one (more than half fail the check)
+  answers: 35
+  real_per_topic: 5
+  real_max: 90
+  wikipedia: 15
+
+holdout:
+  word_similarity: 0.8   # drop a training sentence this similar to a test sentence (word stems)
+  char_similarity: 0.85  # ... or this similar by character trigrams
+
+dataset:
+  dev_fraction: 0.05     # held out from training for the eval loss (not the frozen test)
+  mix:                   # share of each role's examples that goes into the dataset
+    router: 1.0
+    control: 1.0
+    answers: 1.0
+
+models:
+  e4b:
+    base: unsloth/gemma-4-E4B-it
+    baseline: gemma4:e4b         # base model in the home Ollama, compared in the evaluation
+    load_in_4bit: true           # QLoRA - E4B in bf16 does not fit 24 GB with long prompts
+    lora_r: 16
+    lora_alpha: 32
+    learning_rate: 0.0001
+    epochs: 1
+    batch_size: 2
+    grad_accum: 8
+    max_seq_length: 6144         # longer examples (big answer data) are skipped and counted
+  e2b:
+    base: unsloth/gemma-4-E2B-it
+    baseline: gemma4:e2b
+    load_in_4bit: false
+    lora_r: 16
+    lora_alpha: 32
+    learning_rate: 0.0001
+    epochs: 1
+    batch_size: 4
+    grad_accum: 4
+    max_seq_length: 6144
+
+export:
+  quantization: q8_0                  # GGUF from llama.cpp: q8_0, bf16, f16
+  name: assist-router-{model}-ft      # model name in Ollama; the tag is the run name
+
+evaluate:
+  # models unloaded in the home Ollama before the test (e.g. the big one HA keeps loaded),
+  # so the tested models have memory; HA loads it back on the next question
+  unload_first: []
+
+# Values for {wildcards} in your sentence triggers (hassil). Without an entry: names of
+# areas and devices from HA. Example:
+#   slot_values:
+#     kto: [Ania, Tomek, mama, tata]
+slot_values: {}
+
+# Sentence trigger -> topic, when the topic's reference sentence (`command` in router.yaml)
+# does not match it: automation id (or "id#trigger number") -> topic.
+topic_overrides: {}
+
+# Topics for built-in HA intents that are not commands (others go to `fallback_topic`)
+intent_topics:
+  HassGetWeather: pogoda
+fallback_topic: inne
+
+# Music for "play ..." commands (control examples)
+music:
+  artists: [Dawid Podsiadło, Sanah, Kult, Myslovitz, Queen, Adele, Ed Sheeran, Metallica]
+  genres: [jazz, rock, muzyka klasyczna, disco polo, lo-fi, muzyka relaksacyjna]
+  playlists: [Do pracy, Na dobranoc, Impreza]
+shopping_items: [mleko, chleb, masło, jajka, kawa, jabłka, papier toaletowy, ser, makaron, pomidory]

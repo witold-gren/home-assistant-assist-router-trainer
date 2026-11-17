@@ -1,0 +1,15 @@
+.git
+docker/data
+docker/config
+docker/.env
+workspace*
+backup
+tools
+.venv*
+**/__pycache__
+.pytest_cache
+.ruff_cache
+*.egg-info
+site
+Makefile.local
+docs/changelog*.md

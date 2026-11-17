@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "home-assistant-assist-router-trainer"
+version = "0.2.0"
+description = "Fine-tune small Gemma models for Assist Router (topic router, command parser, answers) on your own Home Assistant data, with a training panel"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = ["pyyaml>=6"]
+
+[project.optional-dependencies]
+# Data generation and evaluation import the Assist Router integration, which needs Home
+# Assistant itself - scripts/setup.sh installs the router repository's test requirements.
+data = ["hassil>=3", "home-assistant-intents", "aiohttp>=3.9"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+router-trainer = "router_trainer.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["router_trainer*"]
+
+[tool.setuptools.package-data]
+router_trainer = ["trainer.example.yaml", "studio/www/*", "studio/www/views/*", "studio/www/vendor/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# the Home Assistant test plugin (installed with the integration) blocks sockets - not needed here
+addopts = "-p no:homeassistant -p no:socket"
+markers = ["docker: builds and runs the demo image (skipped without a running Docker)"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]
+# texts and prompts - one entry per line reads better
+# the studio's files are taken over from the wake word studio (its line length is 120)
+per-file-ignores = { "router_trainer/ui/texts.py" = ["E501"], "router_trainer/languages/*.py" = ["E501"], "tests/*.py" = ["E501"], "scripts/studio_demo.py" = ["E501"], "scripts/demo_workspace.py" = ["E501"], "router_trainer/studio/*.py" = ["E501"] }
+
+[tool.ruff.lint.isort]
+known-first-party = ["router_trainer"]
+force-sort-within-sections = true
+combine-as-imports = true
