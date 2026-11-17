@@ -29,6 +29,14 @@ jobs:
         run: |
           ruff check .
           ruff format --check .
+      # the studio serves the guide at /docs/ (make test builds it the same way first)
+      - name: Guide
+        working-directory: home-assistant-assist-router-trainer
+        env:
+          NO_MKDOCS_2_WARNING: "1"
+        run: |
+          pip install -r requirements_docs.txt
+          mkdocs build --strict
       - name: Tests
         working-directory: home-assistant-assist-router-trainer
         run: python -m pytest -q
