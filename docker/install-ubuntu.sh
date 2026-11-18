@@ -12,6 +12,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$HERE/config"
 ENV_FILE="$CONFIG/env"
 COMPOSE=(docker compose -f "$HERE/compose.yaml")
+MIN_DRIVER=580
 
 say() { printf '==> %s\n' "$*"; }
 fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -32,9 +33,14 @@ esac
 say "checking the machine"
 command -v docker >/dev/null || fail "Docker is missing: https://docs.docker.com/engine/install/ubuntu/"
 docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is missing: sudo apt install docker-compose-plugin"
-docker info >/dev/null 2>&1 || fail "this user cannot use Docker: sudo usermod -aG docker $USER (then log in again)"
-command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1 \
-  || fail "the NVIDIA driver does not answer (nvidia-smi) - install it first: sudo ubuntu-drivers install"
+docker info >/dev/null 2>&1 || fail "this user cannot use Docker: sudo usermod -aG docker $(id -un) (then log in again)"
+command -v nvidia-smi >/dev/null || fail "the NVIDIA driver is missing - install it first: sudo ubuntu-drivers install (then reboot)"
+driver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n 1 || true)
+[ -n "$driver" ] || fail "nvidia-smi does not see the card - reboot after installing the driver: sudo reboot"
+# the torch of the image (TORCH_SPEC, torch 2.14.1) is built for CUDA 13.0, which needs driver 580 or newer
+[ "${driver%%.*}" -ge "$MIN_DRIVER" ] 2>/dev/null \
+  || fail "NVIDIA driver $driver is too old for the image's CUDA 13.0 (needs $MIN_DRIVER or newer): sudo ubuntu-drivers install"
+say "NVIDIA driver $driver"
 docker info --format '{{json .Runtimes}}' | grep -q nvidia \
   || fail "the NVIDIA Container Toolkit is missing: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html (then: sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker)"
 free_gb=$(df -Pk "$HERE" | awk 'NR == 2 { print int($4 / 1048576) }')

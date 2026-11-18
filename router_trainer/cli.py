@@ -191,9 +191,19 @@ def main(argv: list[str] | None = None) -> int:
                 store.set_active(ws, args.active)
             print(json.dumps(store.listing(ws, settings), ensure_ascii=False))
             return 0
-        if args.case and (args.reject or args.keep):
-            store.set_rejected(ws, args.name, args.case, args.reject)
-        print(json.dumps(store.review_list(ws, settings, args.name), ensure_ascii=False))
+        try:
+            if args.case and (args.reject or args.keep):
+                store.set_rejected(ws, args.name, args.case, args.reject)
+            cases = store.review_list(ws, settings, args.name)
+        except FileNotFoundError:
+            # a fresh workspace: no test from Home Assistant fetched yet (or the test was removed)
+            print(
+                f"error: test '{args.name}' has no file yet - fetch from Home Assistant (step 1) "
+                "or generate the test first",
+                file=sys.stderr,
+            )
+            return 1
+        print(json.dumps(cases, ensure_ascii=False))
         return 0
     if command == "snapshot":
         return pipeline.run(ws, ["snapshot"], "none", [])

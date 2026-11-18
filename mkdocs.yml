@@ -65,6 +65,7 @@ plugins:
           nav_translations:
             What it is: Co to jest
             Installation: Instalacja
+            From zero to a model: Od zera do modelu
             The screen: Ekran
             Step by step: Krok po kroku
             Doing it well: Jak robić to dobrze
@@ -76,6 +77,7 @@ plugins:
 nav:
   - What it is: index.md
   - Installation: installation.md
+  - From zero to a model: guide.md
   - The screen: screen.md
   - Step by step: steps.md
   - Doing it well: good-practice.md

@@ -52,6 +52,11 @@ SHOTS = {
     "studio-generate-settings": ("settings/generate", None),
     "studio-power": ("power", None),
     "studio-save": ("settings/models/e4b", "save"),
+    "studio-jobs": ("jobs", None),
+    "studio-try": ("try", None),
+    "studio-machine": ("machine", None),
+    "studio-look": ("look", None),
+    "studio-gear": ("overview", "gear"),
 }
 
 
@@ -135,11 +140,16 @@ def shots(port: int, out: Path = OUT) -> list[Path]:
                     page.fill("[data-setting='models.e4b.epochs']", "2")
                     page.click("[data-save]")
                     page.wait_for_selector("dialog[data-dialog=save]")
+                if then == "gear":
+                    page.click("[data-settings]")
+                    page.wait_for_selector("[data-gear-box]")
                 page.wait_for_timeout(600)
                 target = out / language / f"{name}.png"
                 target.parent.mkdir(parents=True, exist_ok=True)
                 page.screenshot(path=target)
                 made.append(target)
+                if then == "gear":
+                    page.keyboard.press("Escape")
                 if then == "save":
                     page.click("dialog[data-dialog=save] [data-close]")
                     page.click("[data-discard]")

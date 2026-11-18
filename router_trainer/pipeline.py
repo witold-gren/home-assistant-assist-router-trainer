@@ -18,7 +18,7 @@ import subprocess
 from typing import Any
 
 from . import evaluate as evaluate_module, export as export_module, holdout
-from .config import Workspace, deep_merge, load_settings, model_settings
+from .config import REPO, Workspace, deep_merge, load_settings, model_settings
 from .generate.common import stage
 from .teacher import Teacher, local_url
 
@@ -79,7 +79,7 @@ def train(ws: Workspace, name: str, resume: bool = False) -> int:
     command = [str(python), "-m", "router_trainer.train", "--run", str(folder)]
     if resume:
         command.append("--resume")
-    return subprocess.run(command, cwd=export_module.REPO, check=False).returncode
+    return subprocess.run(command, cwd=REPO, check=False).returncode
 
 
 def run(

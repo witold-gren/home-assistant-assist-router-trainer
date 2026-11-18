@@ -7,6 +7,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      target: app                   # not the demo or docs stage of the same Dockerfile
       args:
         UID: ${UID:-1000}
         GID: ${GID:-1000}

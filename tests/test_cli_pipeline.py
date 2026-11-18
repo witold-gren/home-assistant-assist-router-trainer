@@ -151,6 +151,24 @@ def test_smoke_workspace_is_small_and_separate(tmp_path) -> None:
     assert not (ws.root / "tests").exists()  # the real workspace is untouched
 
 
+def test_smoke_uses_the_router_fetched_for_the_real_workspace(tmp_path) -> None:
+    """router_repo: auto points into the workspace's own router/ folder; the smoke workspace has none, so it
+    gets the real workspace's router (in the container nothing lies next to the trainer)."""
+    import json
+
+    from router_trainer import smoke
+    from router_trainer.config import load_settings
+
+    ws = init_workspace(tmp_path / "workspace")
+    checkout = ws.root / "router" / "v0.1.7" / "custom_components" / "assist_router"
+    checkout.mkdir(parents=True)
+    (checkout / "manifest.json").write_text(json.dumps({"version": "0.1.7"}))
+    (ws.root / "router" / "current").write_text("v0.1.7\n")
+    assert load_settings(ws)["router_repo"] == str(ws.root / "router" / "v0.1.7")
+    copy = smoke.prepare(ws)
+    assert load_settings(copy)["router_repo"] == str(ws.root / "router" / "v0.1.7")
+
+
 def test_smoke_runs_every_step_with_a_generated_test(tmp_path, monkeypatch) -> None:
     from router_trainer import smoke
 
@@ -158,3 +176,28 @@ def test_smoke_runs_every_step_with_a_generated_test(tmp_path, monkeypatch) -> N
     monkeypatch.setattr(smoke.pipeline, "run", lambda ws, steps, *a, **k: calls.append(steps) or 1)
     assert smoke.run(init_workspace(tmp_path / "workspace")) == 1
     assert calls[0][0] == "testgen" and calls[0][-1] == "evaluate"
+
+
+def test_train_starts_the_training_python_in_the_trainer_folder(tmp_path, monkeypatch) -> None:
+    """pipeline.train itself (not a stand-in): the command, --resume and a working folder that exists."""
+    import subprocess as sp
+
+    from router_trainer import export as export_module
+    from router_trainer.config import REPO
+
+    ws = init_workspace(tmp_path / "workspace")
+    python = tmp_path / "python"
+    python.write_text("")
+    monkeypatch.setattr(export_module, "TRAIN_PYTHON", python)
+    monkeypatch.setattr(pipeline, "free_gpu", lambda settings: None)
+    seen = {}
+
+    def fake_run(command, cwd=None, check=False):
+        seen.update(command=command, cwd=cwd)
+        return sp.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(pipeline.subprocess, "run", fake_run)
+    assert pipeline.train(ws, "smoke-e2b", resume=True) == 0
+    assert seen["command"][:3] == [str(python), "-m", "router_trainer.train"]
+    assert seen["command"][-1] == "--resume" and str(ws.run("smoke-e2b")) in seen["command"]
+    assert seen["cwd"] == REPO and REPO.is_dir()

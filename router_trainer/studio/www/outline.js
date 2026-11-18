@@ -2,7 +2,7 @@
 // A node: {key, icon, label, children, count?, warn?, hint?, busy?, done?} (done: the step is behind you, a ✓); groups: {key: "g:…", label, children}.
 
 export const VIEWS = ["overview", "ha", "router", "tests", "generate", "datasets", "train", "live", "jobs", "runs",
-  "compare", "try", "settings", "power", "machine", "account"];
+  "compare", "try", "settings", "look", "power", "machine", "account"];
 
 // the parts of trainer.yaml with a form of their own (key in the tree -> path in the file)
 export const SETTINGS = [
@@ -79,6 +79,7 @@ export function buildOutline({ state, data, t }) {
     },
     {
       key: "g:settings", label: t("g_settings"), children: [
+        node("look", "mdi:palette-outline", t("gear_title")),
         node("settings", "mdi:file-cog-outline", "trainer.yaml", {
           children: [
             ...SETTINGS.map(([key, icon]) => node(`settings/${key}`, icon, t(`s_${key}`))),

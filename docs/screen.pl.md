@@ -10,7 +10,7 @@ Od lewej: menu ☰ (przewodnik, kto jest zalogowany, <span class="ui">Wyloguj</s
 (etap, postęp) i maszyna (obciążenie GPU, temperatura, pamięć, moc) z <span class="ui">Wyłącz maszynę</span>;
 odliczanie „Wyłączenie za 1:45 · Anuluj” i jego błędy; czerwona pigułka, gdy kod routera różni się od wersji w Home
 Assistancie; stan szkicu, cofnij / ponów, <span class="ui">Odrzuć szkic</span>; wygląd, <span class="ui">YAML</span>,
-**?** (ten przewodnik w nowej karcie), ⚙ (język, wygląd), <span class="ui">Historia</span>,
+**?** (ten przewodnik w nowej karcie), ⚙ (małe okienko z motywem i językiem, [opis tutaj](guide.md#guide-screen)), <span class="ui">Historia</span>,
 <span class="ui">Zapisz</span>.
 
 ## Drzewo {#tree}

@@ -107,6 +107,17 @@ button.ghost.danger { color: var(--red); }
 }
 .menu-pop button, .menu-pop a { justify-content: flex-start; background: none; color: var(--text); text-decoration: none; padding: 8px 10px; border-radius: 8px; display: flex; gap: 8px; align-items: center; }
 .menu-pop button:hover, .menu-pop a:hover { background: var(--hover); }
+.menu-wrap { position: relative; display: inline-flex; }
+.menu-wrap .menu-pop { top: calc(100% + 6px); left: 0; }
+.menu-wrap .menu-pop.gear-box { left: auto; right: 0; min-width: 300px; gap: 8px; padding: 14px; }
+.gear-box .gear-title { font-weight: 700; font-size: 16px; }
+.look-view { display: grid; gap: 8px; max-width: 420px; }
+.gear-label { color: var(--muted); font-size: 13px; }
+.segmented { display: flex; gap: 2px; padding: 4px; border-radius: 10px; background: var(--panel2); }
+.segmented button { flex: 1; justify-content: center; white-space: nowrap; padding: 8px 10px; border-radius: 8px; background: transparent; color: var(--muted); }
+.segmented button:hover { color: var(--text); }
+.segmented button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.gear-box .gear-all { justify-content: flex-start; color: var(--muted); }
 .menu-pop .who { color: var(--muted); font-size: 12px; padding: 6px 10px; }
 .notice { display: flex; gap: 10px; align-items: center; padding: 8px 16px; background: rgba(79, 140, 255, 0.15); }
 .notice.error { background: rgba(255, 69, 58, 0.15); }

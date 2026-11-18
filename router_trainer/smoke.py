@@ -67,6 +67,10 @@ def prepare(ws: Workspace) -> Workspace:
         else {}
     )
     own = own or {}
+    # the router code the real workspace uses (`auto` looks in the workspace's own router/ folder,
+    # which the smoke workspace does not have): the same folder, resolved
+    if ws.config_file.exists():
+        own["router_repo"] = load_settings(ws)["router_repo"]
     own["generate"] = SMALL
     own["test"] = SMALL_TEST
     smoke.config_file.write_text(

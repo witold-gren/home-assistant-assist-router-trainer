@@ -27,7 +27,7 @@ from ..ui.server import CONTENT_TYPES, DOCS, Panel
 from . import help as help_texts
 from .auth import COOKIE, ENV, Auth, LoginRefused, parse_credentials
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 WWW = Path(__file__).parent / "www"
 POWER_OFF_DELAY = (
     120  # seconds between the end of a job and switching the machine off (can be cancelled)

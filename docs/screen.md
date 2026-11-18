@@ -10,7 +10,7 @@ From the left: the ☰ menu (the guide, who is logged in, <span class="ui">Log o
 job (stage, progress) and the machine (GPU load, temperature, memory, power) with <span class="ui">Switch the
 machine off</span>; the countdown "switching off in 1:45 · Cancel" and its errors; a red pill when the router code
 differs from Home Assistant's; the draft state, undo / redo, <span class="ui">Discard draft</span>; the look,
-<span class="ui">YAML</span>, **?** (this guide in a new tab), ⚙ (language, look), <span class="ui">History</span>,
+<span class="ui">YAML</span>, **?** (this guide in a new tab), ⚙ (a small window with the theme and the language, [described here](guide.md#guide-screen)), <span class="ui">History</span>,
 <span class="ui">Save</span>.
 
 ## The tree {#tree}

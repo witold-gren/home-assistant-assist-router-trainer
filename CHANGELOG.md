@@ -2,6 +2,27 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions: [SemVer](https://semver.org/).
 
+## [0.2.1] - 2026-11-18
+
+### Added
+- "From zero to a model" page of the guide (PL and EN): every function of the studio step by step, from the first
+  login to the model in Assist Router, with new pictures (⚙ window, look and language, job log, try it, machine check).
+- "Look and language" in the tree under Settings (`mdi:palette-outline`); "All look and language" in ⚙ leads to it.
+- Tests of the installer on a pretend machine and of the real command line run the way the studio runs jobs.
+
+### Changed
+- ⚙ in the top bar opens a small window under itself (theme, language, "All look and language") instead of a
+  dialog, styled as in the other studios (segmented theme and language, labels on one line); Esc, a click beside
+  it or ⚙ again close it, and ☰ closes the same way. The settings dialog is gone.
+
+### Fixed
+- The smoke test uses the router code fetched for the real workspace (in the container nothing lies next to the
+  trainer), and the training step starts in the trainer's folder again.
+- compose builds the studio stage by name (`target: app`), never the last stage of the Dockerfile by chance.
+- The installer names the user with `id -un` (no `$USER` under `set -u`) and stops on an NVIDIA driver older
+  than 580, which the image's CUDA 13.0 needs.
+- Reviewing the test from Home Assistant before the first fetch shows one clear line, not a Python traceback.
+
 ## [0.2.0] - 2026-11-17
 
 ### Added

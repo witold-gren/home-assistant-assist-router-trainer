@@ -8,8 +8,10 @@ A new error that is not here? Add it to this page (PL and EN) with its fix.
 | Message / symptom | Cause and fix |
 |---|---|
 | "error: Docker is missing", "the Docker Compose plugin is missing" | Install Docker from Docker's repository and `docker-compose-plugin` ([Installation](installation.md#install-machine)). |
-| "error: this user cannot use Docker" | `sudo usermod -aG docker $USER`, then log out and in. |
-| "error: the NVIDIA driver does not answer (nvidia-smi)" | `sudo ubuntu-drivers install` and a reboot; after a kernel update a reboot is often enough. |
+| "error: this user cannot use Docker" | `sudo usermod -aG docker $(id -un)`, then log out and in. |
+| "error: the NVIDIA driver is missing" | `sudo ubuntu-drivers install` and a reboot. |
+| "error: nvidia-smi does not see the card" | The driver is installed but not loaded: reboot; after a kernel update a reboot is often enough. |
+| "error: NVIDIA driver … is too old for the image's CUDA 13.0" | The image's PyTorch needs driver 580 or newer: `sudo ubuntu-drivers install` (or `sudo apt install nvidia-driver-580`) and a reboot. |
 | "error: the NVIDIA Container Toolkit is missing" | Install `nvidia-container-toolkit`, then `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`. |
 | "warning: the container does not see the GPU" | The toolkit is not set up for Docker or the driver is older than the image's PyTorch needs (driver 580 / CUDA 13.0). `docker run --rm --gpus all ubuntu nvidia-smi` must show the card; `make doctor` (from the Mac, through ssh) checks the container. |
 | The page does not open after switching the machine on | Docker does not start with the system (`sudo systemctl enable --now docker`) or the container failed: `make logs` from the Mac. |

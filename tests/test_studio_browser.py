@@ -132,9 +132,9 @@ def test_look_language_and_guide(page) -> None:
     page.click("[data-theme-button]")
     assert page.get_attribute("[data-theme-button]", "data-theme-button") != before
     page.click("[data-settings]")
-    page.select_option("[data-language]", "pl")
+    page.click("[data-gear-language=pl]")
     page.wait_for_function("document.documentElement.lang === 'pl'")
-    page.click("dialog[data-dialog=settings] [data-close]")
+    page.keyboard.press("Escape")
     assert "Przegląd" in page.locator("[data-tree]").inner_text()
     # "?" in the top bar: the guide (MkDocs) in the studio's language, in a new tab
     assert page.get_attribute("[data-docs]", "target") == "_blank"
@@ -144,6 +144,57 @@ def test_look_language_and_guide(page) -> None:
     guide.wait_for_load_state()
     assert guide.url.endswith("/docs/pl/") and "Trener Assist Routera" in guide.title()
     guide.close()
+
+
+def test_the_gear_opens_a_small_window_with_the_look_and_language(page) -> None:
+    """⚙ opens a window under itself (not the middle view): the theme and the language work at once and the
+    window stays open; Esc, a click beside it and ⚙ again close it; ☰ and ⚙ close each other."""
+    url = page.url
+    page.click("[data-settings]")
+    box = page.locator("[data-gear-box]")
+    box.wait_for()
+    gear = page.locator("[data-settings]").bounding_box()
+    shown = box.bounding_box()
+    assert shown["y"] >= gear["y"] + gear["height"] - 1  # under the button
+    assert abs((shown["x"] + shown["width"]) - (gear["x"] + gear["width"])) < 2  # its right edge
+    assert page.url == url and not page.locator("dialog[open]").count()
+    page.click("[data-gear-theme=dark]")
+    page.wait_for_function("document.documentElement.dataset.theme === 'dark'")
+    assert page.get_attribute("[data-gear-theme=dark]", "aria-pressed") == "true"
+    page.click("[data-gear-theme=light]")
+    page.wait_for_function("document.documentElement.dataset.theme === 'light'")
+    page.click("[data-gear-language=en]")
+    page.wait_for_function("document.documentElement.lang === 'en'")
+    assert box.is_visible() and page.url == url  # still open, the view did not change
+    page.keyboard.press("Escape")
+    box.wait_for(state="detached")
+    page.click("[data-settings]")
+    box.wait_for()
+    page.mouse.click(5, page.viewport_size["height"] - 5)  # beside it
+    box.wait_for(state="detached")
+    page.click("[data-settings]")
+    box.wait_for()
+    page.click("[data-settings]")  # ⚙ again
+    box.wait_for(state="detached")
+    page.click("[data-settings]")
+    page.click("[data-menu]")  # ☰ closes ⚙
+    page.wait_for_selector("[data-menu-pop]")
+    assert not box.count()
+    page.keyboard.press("Escape")
+    page.wait_for_selector("[data-menu-pop]", state="detached")
+    page.click("[data-menu]")
+    page.mouse.click(5, page.viewport_size["height"] - 5)
+    page.wait_for_selector("[data-menu-pop]", state="detached")
+    page.click("[data-settings]")
+    page.click("[data-gear-all]")  # the whole look and language: its view in the tree
+    page.wait_for_selector("[data-look-theme]")
+    assert not box.count() and page.url.endswith("#/look")
+    page.click("[data-look-theme=dark]")
+    page.wait_for_function("document.documentElement.dataset.theme === 'dark'")
+    assert page.get_attribute("[data-look-theme=dark]", "class") == "on"
+    page.click("[data-settings]")
+    page.click("[data-gear-theme=auto]")
+    page.keyboard.press("Escape")
 
 
 def test_the_top_bar_follows_the_standard(page) -> None:
@@ -156,7 +207,9 @@ def test_the_top_bar_follows_the_standard(page) -> None:
     page.wait_for_function(
         "/GPU \\d+%/.test(document.querySelector('[data-machine]')?.textContent || '')"
     )
+    # ☰ and ⚙ sit in a .menu-wrap with their windows: the button inside stands for it
     order = page.evaluate("""() => [...document.querySelector('header.top').children]
+      .map((n) => n.classList.contains('menu-wrap') ? n.querySelector('button') : n)
       .map((n) => Object.keys(n.dataset)[0] || n.className.split(' ')[0] || n.tagName.toLowerCase())""")
     wanted = ["menu", "app-icon", "h1", "jobPill", "machine", "powerOff", "draftState", "undo", "redo",
               "themeButton", "yaml", "docs", "settings", "history", "save"]  # fmt: skip

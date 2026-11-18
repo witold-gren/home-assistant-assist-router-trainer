@@ -103,6 +103,7 @@ class RouterTrainerStudio extends LitElement {
     _future: { state: true },
     _yamlAll: { state: true },
     _menu: { state: true },
+    _gear: { state: true },
     _error: { state: true },
   };
 
@@ -139,12 +140,14 @@ class RouterTrainerStudio extends LitElement {
     this._onHash = this._onHash.bind(this);
     this._onGuide = this._onGuide.bind(this);
     this._onUnload = this._onUnload.bind(this);
+    this._onOutside = this._onOutside.bind(this);
     this._applyTheme();
   }
 
   connectedCallback() {
     super.connectedCallback();
     window.addEventListener("keydown", this._onKey);
+    window.addEventListener("click", this._onOutside);
     window.addEventListener("hashchange", this._onHash);
     window.addEventListener("pagehide", this._onUnload);
     document.addEventListener("click", this._onGuide);
@@ -161,6 +164,7 @@ class RouterTrainerStudio extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     window.removeEventListener("keydown", this._onKey);
+    window.removeEventListener("click", this._onOutside);
     window.removeEventListener("hashchange", this._onHash);
     window.removeEventListener("pagehide", this._onUnload);
     document.removeEventListener("click", this._onGuide);
@@ -432,7 +436,20 @@ class RouterTrainerStudio extends LitElement {
     this._applySettings(await common.call("settings/get"));
   }
 
+  /** A click outside ☰ and ⚙ closes their windows (the click on ☰ or ⚙ itself toggles them). */
+  _onOutside(event) {
+    if (!this._menu && !this._gear) return;
+    if (event.composedPath().some((el) => el.classList?.contains("menu-wrap"))) return;
+    this._menu = false;
+    this._gear = false;
+  }
+
   _onKey(event) {
+    if (event.key === "Escape" && (this._menu || this._gear)) {
+      this._menu = false;
+      this._gear = false;
+      return;
+    }
     const mod = event.ctrlKey || event.metaKey;
     if (!mod || this._dialog || document.querySelector("dialog.ask[open]")) return;
     if (event.code === "KeyB") {
@@ -590,6 +607,7 @@ class RouterTrainerStudio extends LitElement {
         ? { render: () => renderSettings(id), yaml: id && id !== "models" ? settingsPath(id) : null } : null;
       case "power": return { ...live, render: renderPower };
       case "machine": return { ...live, render: renderMachine };
+      case "look": return { ...live, render: () => this._lookView() };
       case "account": return { ...live, render: renderAccount };
       default: return null;
     }
@@ -809,7 +827,9 @@ class RouterTrainerStudio extends LitElement {
     const power = this._state.studio?.power_off || {};
     const countdown = power.at ? Math.max(0, Math.round(power.at - Date.now() / 1000)) : null;
     return html`<header class="top">
-      <button class="ghost menu" data-menu aria-label=${this._t("menu")} title=${this._t("menu")} @click=${() => { this._menu = !this._menu; }}>
+      <span class="menu-wrap">
+      <button class="ghost menu" data-menu aria-label=${this._t("menu")} title=${this._t("menu")}
+        @click=${() => { this._menu = !this._menu; this._gear = false; }}>
         <ha-icon icon="mdi:menu"></ha-icon>
       </button>
       ${this._menu ? html`<div class="menu-pop" data-menu-pop @click=${() => { this._menu = false; }}>
@@ -822,6 +842,7 @@ class RouterTrainerStudio extends LitElement {
           location.assign("/login");
         }}><ha-icon icon="mdi:logout"></ha-icon>${this._t("logout")}</button>
       </div>` : nothing}
+      </span>
       <img class="app-icon" src="/favicon.svg" alt="" width="22" height="22" />
       <h1>${this._t("title")}</h1>
       <span class="board" title=${this._settings.path}>trainer.yaml</span>
@@ -859,8 +880,12 @@ class RouterTrainerStudio extends LitElement {
         <ha-icon icon="mdi:code-braces"></ha-icon>${this._t("yaml")}</button>
       <a class="btn ghost" data-docs title=${this._t("docs_hint")} aria-label=${this._t("docs")}
         href=${docsUrl(this._state.language)} target="_blank" rel="noopener"><ha-icon icon="mdi:help-circle-outline"></ha-icon></a>
-      <button class="ghost" data-settings title=${this._t("settings")} @click=${() => { this._dialog = "settings"; }}>
-        <ha-icon icon="mdi:cog-outline"></ha-icon></button>
+      <span class="menu-wrap">
+        <button class="ghost ${this._gear ? "on" : ""}" data-settings title=${this._t("settings")} aria-expanded=${this._gear ? "true" : "false"}
+          @click=${() => { this._gear = !this._gear; this._menu = false; }}>
+          <ha-icon icon="mdi:cog-outline"></ha-icon></button>
+        ${this._gear ? this._renderGear() : nothing}
+      </span>
       <button class="ghost" data-history @click=${this._openHistory}><ha-icon icon="mdi:history"></ha-icon>${this._t("history")}</button>
       <button class="primary" data-save ?disabled=${!this._dirty} @click=${this._openSave}>
         <ha-icon icon="mdi:content-save"></ha-icon>${this._t("save")}</button>
@@ -990,7 +1015,6 @@ class RouterTrainerStudio extends LitElement {
   _renderDialog() {
     if (this._dialog === "save") return this._renderSave();
     if (this._dialog === "history") return this._renderHistory();
-    if (this._dialog === "settings") return this._renderSettings();
     if (this._dialog === "guide") return this._renderGuide();
     return nothing;
   }
@@ -1059,18 +1083,51 @@ class RouterTrainerStudio extends LitElement {
     return this._dialogShell("history", this._t("history_title"), body);
   }
 
-  _renderSettings() {
-    const body = html`
-      <label class="field">${this._t("language")}
-        <select data-language @change=${(event) => this._setLanguage(event.target.value)}>
-          ${LANGUAGES.map((code) => html`<option value=${code} ?selected=${code === this._state.language}>${code.toUpperCase()}</option>`)}
-        </select></label>
-      <label class="field">${this._t("theme")}
-        <select data-theme-select @change=${(event) => this._setTheme(event.target.value)}>
-          ${THEMES.map((theme) => html`<option value=${theme} ?selected=${theme === this._theme}>${this._t(`theme_choice_${theme}`)}</option>`)}
-        </select></label>
-      <p class="hint">${this._t("logged_in", { user: this._state.studio?.user || "?" })} · ${this._state.studio?.version || ""}</p>`;
-    return this._dialogShell("settings", this._t("settings"), body, nothing, true);
+  /** ⚙: the look and the language at hand; a choice works at once and the window stays open. */
+  _renderGear() {
+    return html`<div class="menu-pop gear-box" data-gear-box>
+      <span class="gear-title">${this._t("gear_title")}</span>
+      <span class="gear-label">${this._t("gear_theme")}</span>
+      <div class="segmented" role="group" aria-label=${this._t("gear_theme")}>
+        ${THEMES.map((theme) => html`<button class=${theme === this._theme ? "on" : ""} data-gear-theme=${theme}
+          aria-pressed=${theme === this._theme ? "true" : "false"} @click=${() => this._setTheme(theme)}>
+          ${this._t(`theme_choice_${theme}`)}</button>`)}
+      </div>
+      <span class="gear-label">${this._t("language")}</span>
+      <div class="segmented" role="group" aria-label=${this._t("language")}>
+        ${LANGUAGES.map((code) => html`<button class=${code === this._state.language ? "on" : ""} data-gear-language=${code}
+          aria-pressed=${code === this._state.language ? "true" : "false"} @click=${() => this._setLanguage(code)}>
+          ${this._t(`language_${code}`)}</button>`)}
+      </div>
+      <button class="gear-all" data-gear-all @click=${() => { this._gear = false; this._select("look"); }}>
+        <ha-icon icon="mdi:palette-outline"></ha-icon>${this._t("gear_all")}</button>
+    </div>`;
+  }
+
+  /** "Look and language" in the tree: the same choices as ⚙, as a view of its own. */
+  _lookView() {
+    const { el, card } = common;
+    const group = (items, current, attr, pick) => {
+      const box = el("div", { class: "segmented", role: "group" });
+      for (const [value, label] of items) {
+        const button = el("button", { class: value === current ? "on" : "", [attr]: value, onclick: () => {
+          for (const other of box.children) other.classList.toggle("on", other === button);
+          pick(value);
+        } }, label);
+        box.append(button);
+      }
+      return box;
+    };
+    return card(this._t("gear_title"), null,
+      el("div", { class: "look-view" },
+        el("p", { class: "hint" }, this._t("look_intro")),
+        el("span", { class: "gear-label" }, this._t("gear_theme")),
+        group(THEMES.map((theme) => [theme, this._t(`theme_choice_${theme}`)]), this._theme, "data-look-theme",
+          (theme) => this._setTheme(theme)),
+        el("span", { class: "gear-label" }, this._t("language")),
+        group(LANGUAGES.map((code) => [code, this._t(`language_${code}`)]), this._state.language, "data-look-language",
+          (code) => this._setLanguage(code)),
+        el("p", { class: "hint" }, `${this._t("logged_in", { user: this._state.studio?.user || "?" })} · ${this._state.studio?.version || ""}`)));
   }
 
   _renderGuide() {

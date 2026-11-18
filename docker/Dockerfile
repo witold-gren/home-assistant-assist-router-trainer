@@ -63,7 +63,8 @@ EXPOSE 8791
 CMD ["python", "scripts/studio_demo.py", "--host", "0.0.0.0", "--port", "8791"]
 
 # --- the studio ---------------------------------------------------------------------------------------
-FROM ubuntu:24.04
+# the studio itself: compose builds this stage by name (target: app), never the last stage by chance
+FROM ubuntu:24.04 AS app
 
 ARG UID=1000
 ARG GID=1000
