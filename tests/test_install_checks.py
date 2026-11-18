@@ -16,7 +16,7 @@ REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "docker" / "install-ubuntu.sh"
 TOOLS = [
     *("bash", "sh", "sed", "grep", "head", "tail", "mkdir", "chmod", "cat", "id"),
-    *("dirname", "awk", "env", "rm", "python3", "printf"),
+    *("dirname", "awk", "env", "rm", "mv", "python3", "printf"),
 ]
 
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="bash not installed")
@@ -151,6 +151,39 @@ def test_running_it_again_keeps_the_password_and_the_router_version(tmp_path) ->
     assert out.returncode == 0, out.stdout + out.stderr
     assert env_file.read_text() == first and "login written" not in out.stdout
     assert "ROUTER_REF=v0.1.8" in (docker / ".env").read_text()
+
+
+def test_trusted_networks_are_written_changed_and_removed(tmp_path) -> None:
+    docker = fake_machine(tmp_path)
+    env_file = docker / "config" / "env"
+    out, _ = run(tmp_path, STUDIO_TRUSTED_NETWORKS="192.168.1.0/24")
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "STUDIO_TRUSTED_NETWORKS=192.168.1.0/24\n" in env_file.read_text()
+    assert "no login from: 192.168.1.0/24" in out.stdout
+    password = env_file.read_text().splitlines()[0]
+    out, _ = run(tmp_path, STUDIO_TRUSTED_NETWORKS="192.168.1.0/24,10.0.0.0/24")
+    lines = env_file.read_text().splitlines()
+    assert lines == [password, "STUDIO_TRUSTED_NETWORKS=192.168.1.0/24,10.0.0.0/24"]
+    out, _ = run(tmp_path)  # not given: kept as it is
+    assert env_file.read_text().splitlines() == lines
+    out, _ = run(tmp_path, STUDIO_TRUSTED_NETWORKS="")  # given empty: the login from everywhere
+    assert out.returncode == 0 and env_file.read_text().splitlines() == [password]
+    assert "no login from: nowhere (login always)" in out.stdout
+    assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
+
+
+def test_make_install_passes_the_trusted_networks_on() -> None:
+    def dry(*args: str) -> str:
+        return subprocess.run(["make", "-n", "install", "GPU_HOST=gpu", *args], cwd=SCRIPT.parents[1],
+                              capture_output=True, text=True, check=True).stdout  # fmt: skip
+
+    assert 'STUDIO_TRUSTED_NETWORKS="192.168.1.0/24" ./docker/install-ubuntu.sh' in dry(
+        "STUDIO_TRUSTED_NETWORKS=192.168.1.0/24"
+    )
+    assert 'STUDIO_TRUSTED_NETWORKS="" ./docker/install-ubuntu.sh' in dry(
+        "STUDIO_TRUSTED_NETWORKS="
+    )
+    assert "STUDIO_TRUSTED_NETWORKS" not in dry()
 
 
 def test_compose_builds_the_studio_stage_by_name() -> None:

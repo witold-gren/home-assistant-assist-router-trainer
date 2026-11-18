@@ -57,6 +57,14 @@ if [ ! -f "$ENV_FILE" ]; then
   printf 'ROUTER_TRAINER_UI_AUTH=admin:%s\n' "$password" > "$ENV_FILE"
   say "login written to $ENV_FILE (show it: docker/install-ubuntu.sh --show-login)"
 fi
+# a home that uses the machine only on its own network may skip the login (e.g. 192.168.1.0/24; VPN clients count when
+# the VPN translates them to a home address); empty = the login from everywhere (always on a machine in the cloud)
+if [ -n "${STUDIO_TRUSTED_NETWORKS+set}" ]; then
+  grep -v '^STUDIO_TRUSTED_NETWORKS=' "$ENV_FILE" > "$ENV_FILE.new" || true
+  [ -z "$STUDIO_TRUSTED_NETWORKS" ] || printf 'STUDIO_TRUSTED_NETWORKS=%s\n' "$STUDIO_TRUSTED_NETWORKS" >> "$ENV_FILE.new"
+  mv "$ENV_FILE.new" "$ENV_FILE"
+  say "no login from: ${STUDIO_TRUSTED_NETWORKS:-nowhere (login always)}"
+fi
 chmod 600 "$ENV_FILE"
 # ROUTER_REF set by hand in docker/.env (the router version baked into the image) is kept
 router_ref=$(sed -n 's/^ROUTER_REF=//p' "$HERE/.env" 2>/dev/null || true)

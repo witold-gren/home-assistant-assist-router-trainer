@@ -4,6 +4,11 @@ The install script writes it to ``config/env`` (mode 600) on the first install, 
 ``PVC_UI_AUTH``. A login gives a signed cookie (HMAC, 30 days). The signing key comes from a random secret
 kept next to the other secrets and from the password itself, so changing the password logs everybody out.
 After ``MAX_FAILURES`` wrong passwords from one address that address waits ``PAUSE_SECONDS``.
+
+``STUDIO_TRUSTED_NETWORKS`` (e.g. ``192.168.1.0/24``, comma-separated, empty by default) lets a home that runs the
+machine only on its own network skip the login: a connection from such a network is logged in as the user.
+Only the address of the connection itself counts, never a header a client could fake. A machine in the cloud
+leaves it empty and keeps the login.
 """
 
 from __future__ import annotations
@@ -12,12 +17,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import hashlib
 import hmac
+import ipaddress
 from pathlib import Path
 import secrets
 import threading
 import time
 
 ENV = "ROUTER_TRAINER_UI_AUTH"
+TRUSTED_ENV = "STUDIO_TRUSTED_NETWORKS"  # the same name in every studio of the GPU machine
 COOKIE = "router_trainer_studio"
 SESSION_SECONDS = 30 * 24 * 3600
 MAX_FAILURES = 5
@@ -39,6 +46,21 @@ def parse_credentials(value: str | None) -> tuple[str, str]:
             f"{ENV} must be user:password (written by docker/install-ubuntu.sh to config/env)"
         )
     return user.strip(), password
+
+
+def parse_networks(value: str | None) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """``192.168.1.0/24, 10.8.0.0/24`` -> networks; empty -> none (the login is needed from everywhere)."""
+    networks = []
+    for part in (value or "").replace(";", ",").replace(" ", ",").split(","):
+        if not part:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(part, strict=False))
+        except ValueError:
+            raise ValueError(
+                f"{TRUSTED_ENV}: {part!r} is not a network like 192.168.1.0/24"
+            ) from None
+    return tuple(networks)
 
 
 def _secret(folder: Path) -> bytes:
@@ -64,14 +86,30 @@ class Auth:
         credentials: tuple[str, str],
         secret_folder: Path,
         clock: Callable[[], float] = time.time,
+        trusted_networks: tuple = (),
     ) -> None:
         self.user, self._password = credentials
+        self.trusted_networks = tuple(trusted_networks)
         self._clock = clock
         self._key = hmac.new(
             _secret(secret_folder), f"{self.user}:{self._password}".encode(), hashlib.sha256
         ).digest()
         self._failures: dict[str, _Failures] = {}
         self._lock = threading.Lock()
+
+    def trusted(self, address: str) -> bool:
+        """The connection comes from a network that needs no login (STUDIO_TRUSTED_NETWORKS)."""
+        if not self.trusted_networks:
+            return False
+        try:
+            ip = ipaddress.ip_address(address.split("%", 1)[0])
+        except ValueError:
+            return False
+        if (
+            isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped
+        ):  # ::ffff:192.168.1.5 (dual-stack socket)
+            ip = ip.ipv4_mapped
+        return any(ip.version == net.version and ip in net for net in self.trusted_networks)
 
     def _sign(self, payload: str) -> str:
         return hmac.new(self._key, payload.encode(), hashlib.sha256).hexdigest()

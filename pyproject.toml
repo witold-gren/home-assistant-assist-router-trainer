@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "home-assistant-assist-router-trainer"
-version = "0.2.1"
+version = "0.3.0"
 description = "Fine-tune small Gemma models for Assist Router (topic router, command parser, answers) on your own Home Assistant data, with a training panel"
 readme = "README.md"
 license = "MIT"

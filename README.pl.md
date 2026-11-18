@@ -7,7 +7,7 @@ zamrożonym testem co w porównaniu modeli. Wszystko dzieje się w **studiu w pr
 w Dockerze na komputerze z kartą: dane z Home Assistanta, test, zbiór danych, trening, eksport do
 Ollamy na Jetsonie, walidacja i „Wypróbuj”.
 
-**Przewodnik:** [Polski](docs/pl/index.html) · [English](docs/en/index.html) - README po angielsku:
+**Strona dokumentacji:** [https://witold-gren.github.io/home-assistant-assist-router-trainer/pl/](https://witold-gren.github.io/home-assistant-assist-router-trainer/pl/) ([English](https://witold-gren.github.io/home-assistant-assist-router-trainer/)) - README po angielsku:
 [README.md](README.md).
 
 ![Studio](docs/assets/screens/pl/studio-live.png)

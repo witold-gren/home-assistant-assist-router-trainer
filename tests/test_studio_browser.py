@@ -127,6 +127,35 @@ def test_the_yaml_on_the_side_changes_the_form(page) -> None:
     page.wait_for_selector("[data-draft-state=clean]")
 
 
+def test_a_trusted_network_opens_without_the_login_and_without_log_out(studio) -> None:
+    import ipaddress
+
+    auth = studio_url.server.auth
+    auth.trusted_networks = (ipaddress.ip_network("127.0.0.0/8"),)
+    try:
+        with playwright.sync_playwright() as p:
+            try:
+                browser = p.chromium.launch(channel="chrome")
+            except Exception as err:
+                pytest.skip(f"Chrome: {err}")
+            page = browser.new_page(viewport={"width": 1500, "height": 900})
+            errors = []
+            page.on("pageerror", lambda err: errors.append(str(err)))
+            page.goto(f"{studio}/login")
+            page.wait_for_selector("[data-tree]")
+            assert not page.url.endswith("/login")
+            page.click("[data-menu]")
+            assert "STUDIO_TRUSTED_NETWORKS" in page.inner_text("[data-who]")
+            assert page.locator("[data-logout]").count() == 0
+            page.goto(f"{studio}/#/account")
+            page.wait_for_selector("[data-trusted]")
+            assert page.locator("[data-logout-view]").count() == 0
+            assert errors == []
+            browser.close()
+    finally:
+        auth.trusted_networks = ()
+
+
 def test_look_language_and_guide(page) -> None:
     before = page.get_attribute("[data-theme-button]", "data-theme-button")
     page.click("[data-theme-button]")
@@ -329,9 +358,9 @@ def steer_state(delay: float = 0.0, hang: float = 0.0, kind: str = "state"):
     seen = {"now": 0, "most": 0, "calls": 0, "texts": []}
     lock = threading.Lock()
 
-    def call(message, user=""):
+    def call(message, user="", trusted=False):
         if message.get("type") != kind:
-            return real(message, user)
+            return real(message, user, trusted)
         with lock:
             seen["now"] += 1
             seen["calls"] += 1
@@ -339,7 +368,7 @@ def steer_state(delay: float = 0.0, hang: float = 0.0, kind: str = "state"):
             seen["most"] = max(seen["most"], seen["now"])
         try:
             time.sleep(delay or hang)
-            return real(message, user)
+            return real(message, user, trusted)
         finally:
             with lock:
                 seen["now"] -= 1

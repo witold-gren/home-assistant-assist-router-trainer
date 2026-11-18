@@ -151,3 +151,26 @@ def test_try_it_on_a_mac_stands_before_the_details() -> None:
         source = (ROOT / name).read_text(encoding="utf-8")
         headings = re.findall(r"^## (.+)$", source, re.M)
         assert headings[0] in ("Try it on a Mac", "Wypróbuj na Macu"), headings
+
+
+def test_github_pages_builds_the_same_site_as_the_image() -> None:
+    """.github/workflows/docs.yml publishes the guide on GitHub Pages with the image's docs requirements and Python,
+    strictly, at the site_url of mkdocs.yml."""
+    workflow = (ROOT / ".github" / "workflows" / "docs.yml").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
+    assert "pip install --no-cache-dir -q -r requirements_docs.txt" in dockerfile
+    assert "pip install -r requirements_docs.txt" in workflow
+    python = re.search(r"FROM python:(\d+\.\d+)-\S+ AS docs", dockerfile)
+    assert python and f'python-version: "{python.group(1)}"' in workflow
+    assert "mkdocs build --strict" in workflow and "actions/deploy-pages@" in workflow
+    site_url = re.search(
+        r'site_url: !ENV \[SITE_URL, "([^"]+)"\]', (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
+    )
+    assert (
+        site_url
+        and site_url.group(1)
+        == "https://witold-gren.github.io/home-assistant-assist-router-trainer/"
+    )
+    assert site_url.group(1) in workflow
+    for readme in ("README.md", "README.pl.md"):
+        assert site_url.group(1) in (ROOT / readme).read_text(encoding="utf-8").split("\n\n", 3)[2]

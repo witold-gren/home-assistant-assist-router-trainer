@@ -94,10 +94,10 @@ doctor: ## Check this computer and the GPU machine (Docker, Chrome, uv, GPU_HOST
 
 ##@ 2. GPU machine (from the Mac: GPU_HOST; docker-* and migrate* on the machine) | 2. Maszyna z GPU (z Maca: GPU_HOST; docker-* i migrate* na maszynie)
 
-install: ## First install on GPU_HOST: code, checks, login, autostart, build, start (STUDIO_DATA=folder) | Pierwsza instalacja na GPU_HOST: kod, sprawdzenie, login, autostart, budowa, start (STUDIO_DATA=folder)
+install: ## First install on GPU_HOST: code, checks, login, autostart, build, start (STUDIO_DATA=folder, STUDIO_TRUSTED_NETWORKS=192.168.1.0/24 = no login from that network) | Pierwsza instalacja na GPU_HOST: kod, sprawdzenie, login, autostart, budowa, start (STUDIO_DATA=folder, STUDIO_TRUSTED_NETWORKS=192.168.1.0/24 = bez logowania z tej sieci)
 	$(NEED_HOST)
 	$(RSYNC_CODE) ./ $(GPU_HOST):$(GPU_DIR)/
-	ssh -t $(GPU_HOST) 'cd $(GPU_DIR) && $(if $(STUDIO_DATA),STUDIO_DATA=$(STUDIO_DATA) )./docker/install-ubuntu.sh'
+	ssh -t $(GPU_HOST) 'cd $(GPU_DIR) && $(if $(STUDIO_DATA),STUDIO_DATA=$(STUDIO_DATA) )$(if $(filter command line,$(origin STUDIO_TRUSTED_NETWORKS)),STUDIO_TRUSTED_NETWORKS="$(STUDIO_TRUSTED_NETWORKS)" )./docker/install-ubuntu.sh'
 
 deploy: ## Every update: send this repository to GPU_HOST and rebuild the studio there | Każda aktualizacja: wyślij repozytorium na GPU_HOST i przebuduj tam studio
 	$(NEED_HOST)

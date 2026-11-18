@@ -22,7 +22,7 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
-    env_file: ./config/env          # ROUTER_TRAINER_UI_AUTH=admin:<password> (mode 600)
+    env_file: ./config/env          # ROUTER_TRAINER_UI_AUTH=admin:<password>, STUDIO_TRUSTED_NETWORKS (mode 600)
     ports:
       - "${STUDIO_PORT:-8790}:8790"
     volumes:

@@ -59,6 +59,24 @@ make logs        # dziennik studia (Ctrl+C kończy)
 Repozytorium sklonowane na maszynie instaluje się bez Maca: `./docker/install-ubuntu.sh`; aktualizacja:
 `git pull && make docker-up`. Inne cele tam: `make docker-logs`, `docker-down`, `docker-shell`.
 
+## Bez logowania w sieci domowej {#trusted-networks}
+
+Dom, który używa maszyny tylko we własnej sieci, może tam pominąć logowanie. Sieć podaj raz przy
+instalacji:
+
+```bash
+make install STUDIO_TRUSTED_NETWORKS=192.168.1.0/24    # Wasza sieć domowa, kilka: po przecinku
+make install STUDIO_TRUSTED_NETWORKS=                  # znowu logowanie zewsząd
+```
+
+- Linia `STUDIO_TRUSTED_NETWORKS=…` trafia do `docker/config/env` (prawa 600); `make install` bez niej
+  zostawia to, co jest. Ta sama nazwa działa w każdym studiu na maszynie z GPU.
+- Liczy się tylko adres połączenia, nigdy nagłówek taki jak `X-Forwarded-For`.
+- Klienci VPN też, gdy VPN zamienia ich adres na domowy.
+- Z takiej sieci studio otwiera się bez strony logowania, a ☰ zamiast przycisku wylogowania pokazuje
+  „Bez logowania — ta sieć jest zaufana (STUDIO_TRUSTED_NETWORKS).”
+- Maszyna w chmurze zostawia to puste i zachowuje logowanie.
+
 ## Gdzie są dane {#data-folders}
 
 | Folder | Co |

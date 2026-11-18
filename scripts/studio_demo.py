@@ -75,9 +75,9 @@ def _paths_as_in_the_container(studio, root: Path, version: str) -> None:
             text = text.replace(json.dumps(old)[1:-1], json.dumps(new)[1:-1])
         return json.loads(text)
 
-    def shown(message: dict, user: str = "") -> object:
+    def shown(message: dict, user: str = "", trusted: bool = False) -> object:
         inward = [(new, old) for old, new in pairs[:1]]  # a job's log asked for by its shown path
-        return swap(call(swap(message, inward), user), outward)
+        return swap(call(swap(message, inward), user, trusted), outward)
 
     studio.call = shown
 

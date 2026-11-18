@@ -7,7 +7,7 @@ frozen test as the model comparison. Everything happens in a **studio in the bro
 Docker on the GPU machine: the data from Home Assistant, the test, the dataset, training, export to
 Ollama on the Jetson, validation and a "try it" box.
 
-**Guide:** [English](docs/en/index.html) · [Polski](docs/pl/index.html) — Polish README:
+**Documentation site:** [https://witold-gren.github.io/home-assistant-assist-router-trainer/](https://witold-gren.github.io/home-assistant-assist-router-trainer/) ([Polski](https://witold-gren.github.io/home-assistant-assist-router-trainer/pl/)) — Polish README:
 [README.pl.md](README.pl.md).
 
 ![The studio](docs/assets/screens/en/studio-live.png)

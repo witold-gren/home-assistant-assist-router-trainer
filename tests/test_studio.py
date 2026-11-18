@@ -65,6 +65,21 @@ def test_login_cookie_expiry_and_pause(tmp_path) -> None:
     assert other.check(auth.login("1.2.3.4", "admin", "secret")) is None
 
 
+def test_trusted_networks_are_read_and_recognised(tmp_path) -> None:
+    networks = auth_module.parse_networks(" 192.168.1.0/24, 10.8.0.1/24;fd00::/8 ")
+    assert [str(n) for n in networks] == ["192.168.1.0/24", "10.8.0.0/24", "fd00::/8"]
+    assert auth_module.parse_networks("") == () and auth_module.parse_networks(None) == ()
+    with pytest.raises(ValueError, match="STUDIO_TRUSTED_NETWORKS"):
+        auth_module.parse_networks("192.168.1.0/24,home")
+    auth = auth_module.Auth(("admin", "secret"), tmp_path, trusted_networks=networks)
+    assert auth.trusted("192.168.1.5") and auth.trusted("10.8.0.200") and auth.trusted("fd00::1")
+    assert auth.trusted("::ffff:192.168.1.5")  # IPv4 on a dual-stack socket
+    assert not auth.trusted("192.168.2.5") and not auth.trusted("::ffff:192.168.2.5")
+    assert not auth.trusted("not an address") and not auth.trusted("")
+    nobody = auth_module.Auth(("admin", "secret"), tmp_path)
+    assert not nobody.trusted("192.168.1.5") and not nobody.trusted("127.0.0.1")
+
+
 # --- the HTTP server ------------------------------------------------------------------------------------
 
 
@@ -120,6 +135,60 @@ def test_only_health_and_login_without_a_cookie(studio) -> None:
         assert request(base, path, {} if path == "/api/call" else None)[0] == 401
     status, _, body = request(base, "/api/login", {"user": "admin", "password": "nope"})
     assert status == 401 and "retry_after" in json.loads(body)
+
+
+@pytest.fixture
+def trusted_studio(tmp_path):
+    ws = init_workspace(tmp_path / "ws")
+    server = studio_server.make_server(ws, ("admin", "secret"), port=0, verbose=False,
+                                       secret_folder=tmp_path / "config",
+                                       trusted_networks=auth_module.parse_networks("127.0.0.0/8"))  # fmt: skip
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield server, f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+def test_a_trusted_network_needs_no_login(trusted_studio) -> None:
+    _, base = trusted_studio
+    status, headers, _ = request(base, "/login")
+    assert status == 303 and headers["Location"] == "/"
+    assert request(base, "/")[0] == 200 and request(base, "/docs/pl/")[0] == 200
+    status, body = call(base, None, type="state")
+    assert status == 200 and body["studio"]["user"] == "admin" and body["studio"]["trusted"] is True
+
+
+def test_without_a_trusted_network_a_faked_header_does_not_help(studio) -> None:
+    _, base = studio
+    for header in ("X-Forwarded-For", "X-Real-IP", "Forwarded"):
+        value = "for=127.0.0.1" if header == "Forwarded" else "127.0.0.1"
+        answer = urllib.request.Request(base + "/api/call", data=b'{"type": "state"}',
+                                        headers={"Content-Type": "application/json", header: value})  # fmt: skip
+        with pytest.raises(urllib.error.HTTPError) as err:
+            urllib.request.urlopen(answer)
+        assert err.value.code == 401
+    status, body = call(base, login(base), type="state")
+    assert status == 200 and body["studio"]["trusted"] is False
+
+
+def test_a_faked_header_does_not_make_an_untrusted_address_trusted(tmp_path) -> None:
+    ws = init_workspace(tmp_path / "ws")
+    server = studio_server.make_server(ws, ("admin", "secret"), port=0, verbose=False,
+                                       secret_folder=tmp_path / "config",
+                                       trusted_networks=auth_module.parse_networks("192.168.1.0/24"))  # fmt: skip
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        answer = urllib.request.Request(base + "/api/call", data=b'{"type": "state"}',
+                                        headers={"Content-Type": "application/json",
+                                                 "X-Forwarded-For": "192.168.1.5"})  # fmt: skip
+        with pytest.raises(urllib.error.HTTPError) as err:
+            urllib.request.urlopen(answer)
+        assert err.value.code == 401
+        assert request(base, "/login")[0] == 200
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_pages_files_and_the_guide_behind_the_login(studio) -> None:

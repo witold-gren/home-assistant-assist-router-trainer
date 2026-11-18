@@ -155,9 +155,15 @@ export function renderMachine() {
 }
 
 export function renderAccount() {
+  if (state.studio?.trusted) {
+    return card(t("n_account"), null,
+      el("p", { "data-trusted": "" }, t("trusted_login")),
+      el("p", { class: "hint" }, t("trusted_hint")));
+  }
   return card(t("n_account"), null,
     el("p", {}, t("logged_in", { user: state.studio?.user || "?" })),
     el("p", { class: "hint" }, t("account_hint")),
+    el("p", { class: "hint" }, t("trusted_hint")),
     el("div", { class: "actions" }, el("button", { class: "btn", "data-logout-view": "", onclick: async () => {
       await fetch("/api/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       location.assign("/login");

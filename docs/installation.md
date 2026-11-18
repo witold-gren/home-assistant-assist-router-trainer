@@ -58,6 +58,24 @@ make logs        # the studio's log (Ctrl+C ends)
 A repository cloned on the machine installs without the Mac: `./docker/install-ubuntu.sh`; updates:
 `git pull && make docker-up`. Other targets there: `make docker-logs`, `docker-down`, `docker-shell`.
 
+## No login on the home network {#trusted-networks}
+
+A home that uses the machine only on its own network can skip the login there. Give the network once when
+installing:
+
+```bash
+make install STUDIO_TRUSTED_NETWORKS=192.168.1.0/24    # your home network, several: comma-separated
+make install STUDIO_TRUSTED_NETWORKS=                  # the login from everywhere again
+```
+
+- The line `STUDIO_TRUSTED_NETWORKS=…` goes to `docker/config/env` (mode 600); `make install` without it keeps
+  what is there. The same name works in every studio on the GPU machine.
+- Only the address of the connection counts, never a header such as `X-Forwarded-For`.
+- VPN clients count when the VPN translates their address to a home address.
+- From such a network the studio opens without the login page, and ☰ shows
+  "No login needed — this network is trusted (STUDIO_TRUSTED_NETWORKS)." instead of the log-out button.
+- A machine in the cloud leaves it empty and keeps the login.
+
 ## Where the data is {#data-folders}
 
 | Folder | What |

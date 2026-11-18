@@ -2,6 +2,20 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions: [SemVer](https://semver.org/).
 
+## [0.3.0] - 2026-11-18
+
+### Added
+- No login on the home network: `STUDIO_TRUSTED_NETWORKS=192.168.1.0/24` (comma-separated, empty by default) in
+  `docker/config/env`, written by `make install STUDIO_TRUSTED_NETWORKS=…`. A connection from such a network is
+  logged in at once; only the connection's own address counts, never a header. ☰ and Account then say
+  "No login needed — this network is trusted" instead of offering to log out.
+- The guide is published on GitHub Pages: https://witold-gren.github.io/home-assistant-assist-router-trainer/
+  (`.github/workflows/docs.yml`, the same MkDocs requirements and Python as the image's docs stage, strict build).
+
+### Fixed
+- The guide links at the top of both READMEs pointed at HTML files that are not in the repository; they now lead to
+  the documentation site.
+
 ## [0.2.1] - 2026-11-18
 
 ### Added

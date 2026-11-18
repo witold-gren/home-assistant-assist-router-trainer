@@ -25,9 +25,9 @@ from ..config import Workspace, init_workspace
 from ..jobs import JobManager
 from ..ui.server import CONTENT_TYPES, DOCS, Panel
 from . import help as help_texts
-from .auth import COOKIE, ENV, Auth, LoginRefused, parse_credentials
+from .auth import COOKIE, ENV, TRUSTED_ENV, Auth, LoginRefused, parse_credentials, parse_networks
 
-VERSION = "0.2.1"
+VERSION = "0.3.0"
 WWW = Path(__file__).parent / "www"
 POWER_OFF_DELAY = (
     120  # seconds between the end of a job and switching the machine off (can be cancelled)
@@ -92,7 +92,7 @@ class Studio:
             self.power_off_error = str(err)
 
     # --- one call of the editor ------------------------------------------------------------------------
-    def call(self, message: dict, user: str = "") -> object:
+    def call(self, message: dict, user: str = "", trusted: bool = False) -> object:
         kind = message.get("type")
         arg = lambda name, default="": message.get(name, default)  # noqa: E731
         if kind == "state":
@@ -101,6 +101,7 @@ class Studio:
             state["help"] = help_texts.texts(state["language"])
             state["studio"] = {
                 "user": user,
+                "trusted": trusted,
                 "version": VERSION,
                 "power_off": dict(self.power_off),
                 "power_off_delay": POWER_OFF_DELAY,
@@ -178,7 +179,12 @@ def _handler(studio: Studio, auth: Auth):
             body = json.dumps(data, ensure_ascii=False).encode()
             self._send(status, body, "application/json; charset=utf-8", headers)
 
+        def _trusted(self) -> bool:
+            return auth.trusted(self.client_address[0])  # the connection's address, never a header
+
         def _user(self) -> str | None:
+            if self._trusted():
+                return auth.user
             cookie = SimpleCookie(self.headers.get("Cookie", ""))
             return auth.check(cookie[COOKIE].value if COOKIE in cookie else None)
 
@@ -203,6 +209,8 @@ def _handler(studio: Studio, auth: Auth):
             if url.path == "/api/health":
                 return self._json({"ok": True, "version": VERSION})
             if url.path == "/login":
+                if self._trusted():  # nothing to log in to from a trusted network
+                    return self._send(HTTPStatus.SEE_OTHER, b"", "text/plain", {"Location": "/"})
                 return self._static("login.html")
             if url.path == "/favicon.svg":
                 return self._static("favicon.svg")
@@ -265,7 +273,7 @@ def _handler(studio: Studio, auth: Auth):
             if path != "/api/call":
                 return self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
             try:
-                return self._json(studio.call(data, user))
+                return self._json(studio.call(data, user, self._trusted()))
             except settings_store.Conflict as err:
                 return self._json({"error": str(err), "conflict": True}, HTTPStatus.CONFLICT)
             except ERRORS as err:
@@ -281,10 +289,11 @@ def make_server(
     port: int = 8790,
     verbose: bool = True,
     secret_folder: Path | None = None,
+    trusted_networks: tuple = (),
     **studio_options,
 ) -> ThreadingHTTPServer:
     studio = Studio(ws, **studio_options)
-    auth = Auth(credentials, secret_folder or CONFIG_FOLDER)
+    auth = Auth(credentials, secret_folder or CONFIG_FOLDER, trusted_networks=trusted_networks)
     server = ThreadingHTTPServer((host, port), _handler(studio, auth))
     server.verbose = verbose
     server.studio = studio
@@ -295,12 +304,14 @@ def make_server(
 def serve(root: Path, host: str, port: int) -> None:
     try:
         credentials = parse_credentials(os.environ.get(ENV))
+        trusted = parse_networks(os.environ.get(TRUSTED_ENV))
     except ValueError as err:
         raise SystemExit(f"error: {err}") from None
-    server = make_server(init_workspace(root), credentials, host, port)
+    server = make_server(init_workspace(root), credentials, host, port, trusted_networks=trusted)
+    without = f"; no login from {', '.join(map(str, trusted))}" if trusted else ""
     print(
         f"Assist Router trainer studio on http://{host}:{port}/ "
-        f"(user '{credentials[0]}', password in {ENV})",
+        f"(user '{credentials[0]}', password in {ENV}{without})",
         flush=True,
     )
     try:
