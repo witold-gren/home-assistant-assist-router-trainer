@@ -28,7 +28,10 @@ A topic with fewer than `min_per_topic` examples is padded with noisy copies - a
 ## Parameters {#parameters}
 
 Every parameter of `trainer.yaml` (Settings in the studio); the default is the value in the code
-(`router_trainer/trainer.example.yaml`).
+(`router_trainer/trainer.example.yaml`). In the studio the lessons of the **Tuning** group (⚙ → Lessons) go through
+these settings field by field ([The tour and the lessons](screen.md#tour)).
+
+![Your home's words](assets/screens/en/studio-home-settings.png)
 
 | Parameter | Default | Range | Effect |
 |---|---|---|---|
@@ -67,6 +70,23 @@ Every parameter of `trainer.yaml` (Settings in the studio); the default is the v
 | `holdout.char_similarity` | 0.85 | 0.6-0.95 | lower = more dropped |
 | `dataset.dev_fraction` | 0.05 | 0.02-0.1 | share kept for the eval loss |
 | `export.quantization` | q8_0 | q8_0 / bf16 / f16 | q8_0: almost lossless, half the size |
+| `generate.router.log_questions` | true | true / false | real questions from the log that are unlike the test |
+| `generate.router.recordings` | true | true / false | the home's voice commands through Whisper - real speech errors |
+| `generate.router.asr_per_topic` | 40 | 0-100 | natural questions per topic read by Piper and written back by Whisper |
+| `generate.router.check_labels` | true | true / false / list of sources | every teacher sentence checked with the router's prompt; another topic = dropped |
+| `generate.router.contrast.per_side` | 40 | 0-100 | sentences per topic of a contrast pair (0 = off) |
+| `generate.router.contrast.pairs` | auto | auto / `[[a, b]]` | auto = the topics mixed up in the last evaluations |
+| `generate.router.contrast.max_pairs` | 12 | 4-20 | pairs taken from the errors with auto |
+| `generate.router.contrast.extra` | [] | `[[a, b]]` | pairs always added (a new topic with no errors yet) |
+| `generate.router.speech.piper` / `.whisper` | "" | host:port | Wyoming servers; empty = the home Ollama's host |
+| `generate.router.speech.voices` | [] | Piper voices | empty = every voice of the language |
+| `dataset.mix.router` / `.control` / `.answers` | 1.0 | 0-1 | share of each role's examples in the dataset |
+| `export.name` | assist-router-{model}-ft | text | the model's name in Ollama; the tag is the run |
+| `evaluate.unload_first` | [] | Ollama models | unloaded on the Jetson before the test, so the tested ones have memory |
+| `topic_overrides` | {} | id → topic | the topic of an automation's sentences when its reference sentence says another |
+| `slot_values` | {} | name → list | values for {wildcards} of your sentence triggers |
+| `intent_topics` / `fallback_topic` | HassGetWeather: pogoda / inne | intent → topic | built-in intents that are not commands |
+| `music.*`, `shopping_items` | lists | lists | words of "play …" and "add … to the list" commands |
 
 ## Reading the chart {#chart}
 
@@ -101,6 +121,12 @@ the epochs (a new run) instead.
 | Weak control | many rejected commands in `generated/control_rejected.jsonl`; add device aliases in HA |
 | "CUDA out of memory" | lower `batch_size`, raise `grad_accum` (the same product), or lower `max_seq_length` |
 | Weak HA-data answers | more `live_per_topic`; shorter topic data in `router.yaml` (`details`, `fetch`) |
+| Two topics mixed up (e.g. lessons / calendar) | add the pair to `contrast.extra`, raise `contrast.per_side`; sharpen both descriptions in `router.yaml` |
+| Many sentences in `generated/labels_dropped.jsonl` | the teacher itself is unsure of the topics: clearer descriptions and examples in `router.yaml`, then a new dataset |
+| Gibberish and short answers ("No.", "Nothing") go to wrong topics | more `gibberish`, higher `noise`, `recordings` and `asr_per_topic` on; add such sentences as examples of their topic |
+| The small model stays a few sentences behind the base | it learns from the teacher and cannot beat it on its own data: add real sentences (log, recordings), not more paraphrases |
+| A new topic | examples in `router.yaml`, test cases in `model_test.yaml`, `contrast.extra` with its neighbours, `topic_overrides` for its automation |
+| Weak commands although the topic is right | with "Only the topic" the commands were not trained at all - untick it, or keep the answer model for commands |
 
 ## An example from the home {#example}
 

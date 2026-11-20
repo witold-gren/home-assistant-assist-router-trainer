@@ -67,4 +67,5 @@ card offers the lesson of its place: <span class="ui">Show me step by step</span
 |---|---|
 | The start | Connect Home Assistant · Fetch from Home Assistant · Automatic training · Read the result and use it · Watch the training |
 | Further steps | Choose and review the test · Generate the data · The dataset · Train one model · Resume a stopped run · Export and compare · Try a sentence · The job history |
-| Set up once | Choose the teacher · The teacher by hand · Change and save settings · The whole file · The machine's power · Look and language |
+| Tuning | Compare different models · Tune the training · What to fix when it is weak · How many and which sentences · Speech: recordings, Piper, Whisper · Contrast pairs · Commands and answers · The test: size and protection |
+| Set up once | Choose the teacher · The teacher by hand · Your home's words · Ollama, export, evaluation · Change and save settings · The whole file · The machine's power · Look and language |

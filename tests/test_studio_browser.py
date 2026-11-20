@@ -19,7 +19,7 @@ playwright = pytest.importorskip("playwright.sync_api")
 VIEWS = ["overview", "auto", "ha", "router", "tests", "test/test1", "generate", "datasets", "dataset/demo", "train", "live",
          "jobs", "runs", "run/demo-e4b", "compare", "try", "settings", "settings/ollama", "settings/teacher", "settings/generate",
          "settings/test", "settings/holdout", "settings/dataset", "settings/export", "settings/evaluate",
-         "settings/models", "settings/models/e4b", "power", "machine", "account"]  # fmt: skip
+         "settings/home", "settings/models", "settings/models/e4b", "power", "machine", "account"]  # fmt: skip
 
 
 @pytest.fixture(scope="module")
@@ -645,6 +645,7 @@ def test_every_lesson_step_finds_its_part_on_the_demo(page, language) -> None:
             page.wait_for_selector(f"router-trainer-tour [data-tour-frame='{step}']", timeout=5000)
             text = page.locator("router-trainer-tour [data-tour-bubble]").inner_text()
             assert "lesson_" not in text, (key, step)
+            assert not _bubble_covers_frame(page), (key, step)
             page.click("router-trainer-tour [data-tour-next]")
         page.wait_for_selector("router-trainer-tour", state="detached")
         page.keyboard.press("Escape")  # ⚙ a lesson left open
@@ -653,6 +654,34 @@ def test_every_lesson_step_finds_its_part_on_the_demo(page, language) -> None:
     assert page.locator("[data-lesson-done]").count() == len(
         lessons
     )  # each one gone through is marked
+
+
+def _bubble_covers_frame(page) -> bool:
+    """Whether the bubble stands over the framed part (a step framed "inside" a large part may)."""
+    page.wait_for_timeout(450)  # the bubble and the frame move with a 0.25 s transition
+    return page.evaluate("""() => {
+      const tour = document.querySelector('router-trainer-tour');
+      const lesson = tour.lesson, step = (lesson ? tour._steps : tour._steps)[tour._index];
+      if (step.side === 'inside') return false;
+      const f = tour.shadowRoot.querySelector('[data-tour-frame]')?.getBoundingClientRect();
+      const b = tour.shadowRoot.querySelector('[data-tour-bubble]').getBoundingClientRect();
+      if (!f) return false;
+      // a frame as large as the window leaves no free side
+      if (f.width > innerWidth - 400 && f.height > innerHeight - 300) return false;
+      return b.left < f.right && b.right > f.left && b.top < f.bottom && b.bottom > f.top;
+    }""")
+
+
+def test_next_on_a_step_waiting_for_a_click_does_what_the_click_does(page) -> None:
+    page.click("[data-settings]")
+    page.click("[data-gear-lessons]")
+    page.click("dialog[data-dialog=lessons] [data-lesson='look']")
+    page.wait_for_selector("router-trainer-tour [data-tour-try]")
+    page.click("router-trainer-tour [data-tour-next]")  # not ⚙ itself
+    page.wait_for_selector("[data-gear-box]")
+    page.wait_for_selector("router-trainer-tour [data-tour-frame='choices']")
+    assert not _bubble_covers_frame(page)
+    page.keyboard.press("Escape")
 
 
 def test_a_lesson_moves_on_with_the_click_of_its_framed_button(page) -> None:
@@ -686,3 +715,30 @@ def test_the_help_of_a_card_shows_its_lesson(page) -> None:
     assert page.locator("router-trainer-tour [data-tour-frame='url']").count() == 1
     page.keyboard.press("Escape")
     page.wait_for_selector("router-trainer-tour", state="detached")
+
+
+def test_a_model_is_added_and_pairs_and_maps_go_to_the_draft(page) -> None:
+    page.evaluate("location.hash = '#/settings/models'")
+    page.fill("[data-model-name]", "e4b_r32")
+    page.click("[data-model-add]")
+    page.wait_for_selector(".field-error:not([hidden])")  # no base yet
+    page.fill("[data-model-base]", "unsloth/gemma-4-E4B-it")
+    page.click("[data-model-add]")
+    page.wait_for_selector("[data-view='settings/models/e4b_r32']")
+    assert (
+        page.locator("[data-setting='models.e4b_r32.lora_r']").input_value() != ""
+    )  # copied from the first
+    page.evaluate("location.hash = '#/settings/generate'")
+    page.fill(
+        "[data-setting='generate.router.contrast.extra']", "czytania/wiadomosci, czytania/kalendarz"
+    )
+    page.evaluate("location.hash = '#/settings/home'")
+    page.fill("[data-setting='topic_overrides']", "asystent_czytania: czytania")
+    page.wait_for_function(
+        "document.querySelector('router-trainer-studio')._current.includes('asystent_czytania')"
+    )
+    text = page.evaluate("document.querySelector('router-trainer-studio')._current")
+    assert "e4b_r32:" in text and "unsloth/gemma-4-E4B-it" in text
+    assert "czytania" in text.split("extra:", 1)[1].split("\n", 3)[1]
+    page.click("[data-discard]")
+    page.click("[data-ask-ok]")

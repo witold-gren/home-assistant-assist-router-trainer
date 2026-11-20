@@ -79,6 +79,35 @@ def _number(value: Any, low: float, high: float, where: str) -> list[str]:
     return []
 
 
+def _is_pairs(value: Any) -> bool:
+    return isinstance(value, list) and all(
+        isinstance(pair, list) and len(pair) == 2 and all(isinstance(x, str) and x for x in pair)
+        for pair in value
+    )
+
+
+def _shapes(merged: dict[str, Any]) -> list[str]:
+    """Lists, pairs and maps of the settings (forms of the studio and the YAML by hand)."""
+    errors: list[str] = []
+    contrast = ((merged.get("generate") or {}).get("router") or {}).get("contrast") or {}
+    pairs = contrast.get("pairs", "auto")
+    if pairs != "auto" and not _is_pairs(pairs):
+        errors.append("generate.router.contrast.pairs: auto or pairs of topics [[a, b], ...]")
+    if not _is_pairs(contrast.get("extra") or []):
+        errors.append("generate.router.contrast.extra: pairs of topics [[a, b], ...]")
+    for key in ("topic_overrides", "intent_topics", "slot_values"):
+        if not isinstance(merged.get(key) or {}, dict):
+            errors.append(f"{key}: a map (key: value, one per line)")
+    for key, value in (
+        (merged.get("slot_values") or {}).items()
+        if isinstance(merged.get("slot_values"), dict)
+        else []
+    ):
+        if not isinstance(value, list):
+            errors.append(f"slot_values.{key}: a list [a, b, c]")
+    return errors
+
+
 def check(text: str) -> dict[str, Any]:
     """{ok, error, warnings} - errors stop saving, warnings do not."""
     try:
@@ -103,6 +132,7 @@ def check(text: str) -> dict[str, Any]:
             for key, (low, high) in MODEL_NUMBERS.items():
                 if isinstance(spec, dict) and key in spec:
                     errors += _number(spec[key], low, high, f"models.{name}.{key}")
+    errors += _shapes(merged)
     from .teacher import PROVIDERS, ROLES
 
     for role, spec in (merged.get("teacher") or {}).items():

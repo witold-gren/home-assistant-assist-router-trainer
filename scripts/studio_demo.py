@@ -50,6 +50,7 @@ SHOTS = {
     "studio-compare": ("compare", None),
     "studio-settings": ("settings/models/e4b", None),
     "studio-generate-settings": ("settings/generate", None),
+    "studio-home-settings": ("settings/home", None),
     "studio-power": ("power", None),
     "studio-save": ("settings/models/e4b", "save"),
     "studio-jobs": ("jobs", None),

@@ -4,6 +4,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions: [Sem
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-20
+
+### Added
+- **Tuning lessons** (⚙ → Lessons → Tuning): compare different models, tune the training (epochs, learning rate,
+  LoRA, batch, memory - when to raise or lower each), what to fix when the result is weak, how many and which
+  sentences, speech (recordings, Piper, Whisper), contrast pairs, commands and answers, the test's size and
+  protection; and two set up once: your home's words, Ollama / export / evaluation. 29 lessons in all.
+- Forms for what had none: speech and the label check, contrast pairs (`pairs`, `extra`, `max_pairs`) in
+  Generation; a new **Your home's words** part (`topic_overrides`, `intent_topics`, `fallback_topic`,
+  `slot_values`, music, shopping); **Add a model** on the list of models (the parameters copied from the first).
+- Saving checks the contrast pairs, `topic_overrides`, `intent_topics` and `slot_values` (a typo stopped a job
+  hours later before).
+- Guide: every parameter in Doing it well → Parameters, new recipes (topics mixed up, dropped labels, gibberish,
+  the small model behind the base, a new topic, commands with "Only the topic").
+
+### Changed
+- Lessons: Next on a step that waits for a click does what the click does (⚙ opens), so the following steps have
+  their part; a lesson waits only for quick buttons (a list in `lessons.js`, checked by a test) - training, export,
+  "Use in Assist Router", Stop and switching off are only framed.
+- The bubble never covers its frame: when the chosen side has no room the other sides are tried.
+
+### Fixed
+- The studio's container ran in UTC: the dates of files, logs and jobs were 1-2 hours off Home Assistant's. It
+  takes the machine's time zone now (`/etc/localtime`, gpu-studio.md section 3); after `make deploy`.
+- A part cut off by its scrolled column (not only by the window) is scrolled to, once a step.
+
 ## [0.4.0] - 2026-11-20
 
 ### Added

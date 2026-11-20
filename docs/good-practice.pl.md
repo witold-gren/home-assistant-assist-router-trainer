@@ -30,7 +30,10 @@ dopisz mu przykłady w `router.yaml`.
 ## Parametry {#parameters}
 
 Każdy parametr `trainer.yaml` (Ustawienia w studiu); wartość domyślna to wartość w kodzie
-(`router_trainer/trainer.example.yaml`).
+(`router_trainer/trainer.example.yaml`). W studiu samouczki grupy **Dostrajanie** (⚙ → Samouczki) przechodzą przez
+te ustawienia pole po polu ([Przewodnik i samouczki](screen.md#tour)).
+
+![Słowa Twojego domu](assets/screens/pl/studio-home-settings.png)
 
 | Parametr | Domyślnie | Zakres | Działanie |
 |---|---|---|---|
@@ -69,6 +72,23 @@ Każdy parametr `trainer.yaml` (Ustawienia w studiu); wartość domyślna to war
 | `holdout.char_similarity` | 0.85 | 0.6-0.95 | niżej = więcej odpada |
 | `dataset.dev_fraction` | 0.05 | 0.02-0.1 | część zostawiona na stratę ewaluacyjną |
 | `export.quantization` | q8_0 | q8_0 / bf16 / f16 | q8_0: prawie bez strat, połowa rozmiaru |
+| `generate.router.log_questions` | true | true / false | prawdziwe pytania z dziennika niepodobne do testu |
+| `generate.router.recordings` | true | true / false | polecenia głosowe domu przez Whispera - prawdziwe błędy mowy |
+| `generate.router.asr_per_topic` | 40 | 0-100 | naturalne pytania na temat czytane przez Pipera i zapisywane przez Whispera |
+| `generate.router.check_labels` | true | true / false / lista źródeł | każde zdanie nauczyciela sprawdzane promptem routera; inny temat = odrzucone |
+| `generate.router.contrast.per_side` | 40 | 0-100 | zdań na temat pary kontrastowej (0 = wyłączone) |
+| `generate.router.contrast.pairs` | auto | auto / `[[a, b]]` | auto = tematy pomylone w ostatnich ocenach |
+| `generate.router.contrast.max_pairs` | 12 | 4-20 | ile par z błędów przy auto |
+| `generate.router.contrast.extra` | [] | `[[a, b]]` | pary dodawane zawsze (nowy temat bez błędów) |
+| `generate.router.speech.piper` / `.whisper` | "" | host:port | serwery Wyoming; puste = host domowej Ollamy |
+| `generate.router.speech.voices` | [] | głosy Pipera | puste = każdy głos języka |
+| `dataset.mix.router` / `.control` / `.answers` | 1.0 | 0-1 | część przykładów każdej roli w zbiorze |
+| `export.name` | assist-router-{model}-ft | tekst | nazwa modelu w Ollamie; tag to bieg |
+| `evaluate.unload_first` | [] | modele Ollamy | zwalniane na Jetsonie przed testem, żeby testowane miały pamięć |
+| `topic_overrides` | {} | id → temat | temat zdań automatyzacji, gdy jej zdanie wzorcowe mówi inny |
+| `slot_values` | {} | nazwa → lista | wartości {zmiennych} Twoich wyzwalaczy zdaniowych |
+| `intent_topics` / `fallback_topic` | HassGetWeather: pogoda / inne | intencja → temat | wbudowane intencje, które nie są poleceniami |
+| `music.*`, `shopping_items` | listy | listy | słowa poleceń „puść …” i „dopisz … do listy” |
 
 ## Czytanie wykresu {#chart}
 
@@ -104,6 +124,12 @@ ma nic do zrobienia: zamiast tego zwiększ epoki (nowy przebieg).
 | Słabe sterowanie | dużo odrzuconych poleceń w `generated/control_rejected.jsonl`; dodaj aliasy urządzeń w HA |
 | „CUDA out of memory” | mniejsze `batch_size`, większe `grad_accum` (ten sam iloczyn) albo mniejsze `max_seq_length` |
 | Słabe odpowiedzi z danych HA | więcej `live_per_topic`; krótsze dane tematów w `router.yaml` (`details`, `fetch`) |
+| Dwa tematy się mylą (np. lekcje / kalendarz) | dodaj parę do `contrast.extra`, podnieś `contrast.per_side`; doprecyzuj oba opisy w `router.yaml` |
+| Dużo zdań w `generated/labels_dropped.jsonl` | nauczyciel sam nie jest pewny tematów: jaśniejsze opisy i przykłady w `router.yaml`, potem nowy zbiór |
+| Bełkot i krótkie odpowiedzi („Nie.”, „Nic”) trafiają do złych tematów | więcej `gibberish`, wyższe `noise`, włączone `recordings` i `asr_per_topic`; dopisz takie zdania jako przykłady ich tematu |
+| Mały model zostaje kilka zdań za bazowym | uczy się od nauczyciela i na jego danych go nie przegoni: dodaj prawdziwe zdania (dziennik, nagrania), nie więcej parafraz |
+| Nowy temat | przykłady w `router.yaml`, przypadki w `model_test.yaml`, `contrast.extra` z sąsiadami, `topic_overrides` dla jego automatyzacji |
+| Słabe polecenia, choć temat jest dobry | przy „Tylko wybór tematu” polecenia w ogóle nie były trenowane - odznacz albo zostaw polecenia modelowi odpowiedzi |
 
 ## Przykład z domu {#example}
 

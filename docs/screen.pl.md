@@ -68,4 +68,5 @@ wytrenowanego modelu), mówi czego. „?” karty proponuje samouczek swojego mi
 |---|---|
 | Na start | Połącz Home Assistanta · Pobierz z Home Assistanta · Trening automatyczny · Odczytaj wynik i użyj go · Śledź trening |
 | Dalsze kroki | Wybierz i przejrzyj test · Wygeneruj dane · Zbiór danych · Wytrenuj jeden model · Wznów przerwany bieg · Eksport i porównanie · Wypróbuj zdanie · Historia zadań |
-| Ustawiane raz | Wybierz nauczyciela · Nauczyciel ręcznie · Zmień i zapisz ustawienia · Cały plik · Zasilanie maszyny · Wygląd i język |
+| Dostrajanie | Porównaj różne modele · Dostrój trening · Co poprawić, gdy jest słabo · Ile i jakich zdań · Mowa: nagrania, Piper, Whisper · Pary kontrastowe · Polecenia i odpowiedzi · Test: wielkość i ochrona |
+| Ustawiane raz | Wybierz nauczyciela · Nauczyciel ręcznie · Słowa Twojego domu · Ollama, eksport, ocena · Zmień i zapisz ustawienia · Cały plik · Zasilanie maszyny · Wygląd i język |

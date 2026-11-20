@@ -476,3 +476,20 @@ def test_install_script_shows_the_login(tmp_path) -> None:
         ["bash", str(copy), "--show-login"], capture_output=True, text=True, check=True
     )
     assert out.stdout.split("\n")[:2] == ["user: admin", "password: pa:ss"]
+
+
+def test_a_lesson_waits_only_for_quick_buttons_and_next_does_the_same() -> None:
+    source = (WWW / "lessons.js").read_text(encoding="utf-8")
+    allowed = re.findall(
+        r'"(\[data-[^"]+\])"', source.split("CLICK_TARGETS = [", 1)[1].split("];", 1)[0]
+    )
+    assert allowed and not {"[data-start]", "[data-auto-start]", "[data-use-model]", "[data-stop]", "[data-export]",
+                            "[data-power-off]", "[data-machine-off]"} & set(allowed)  # fmt: skip
+    waiting = [
+        line for line in source.splitlines() if 'advance: "click"' in line and "{ key:" in line
+    ]
+    assert waiting
+    for line in waiting:
+        targets = re.search(r"targets: \[([^\]]*)\]", line)[1]
+        assert set(re.findall(r'"([^"]+)"', targets)) <= set(allowed), line
+        assert "act:" in line, line  # Next does what the click does

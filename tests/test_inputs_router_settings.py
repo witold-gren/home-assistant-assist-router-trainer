@@ -367,3 +367,21 @@ def test_settings_draft_save_history_restore(tmp_path) -> None:
     with pytest.raises(ValueError):
         settings_store.history_get(ws, "nope")
     assert yaml.safe_load(new)["holdout"]["word_similarity"] == 0.7
+
+
+def test_pairs_lists_and_maps_are_checked_on_save() -> None:
+    good = (
+        "generate: {router: {contrast: {pairs: auto, extra: [[czytania, wiadomosci]]}}}\n"
+        "topic_overrides: {asystent_czytania: czytania}\nslot_values: {kto: [Ania, Tomek]}\n"
+    )
+    assert settings_store.check(good)["ok"]
+    assert settings_store.check("generate: {router: {contrast: {pairs: [[a, b], [c, d]]}}}\n")["ok"]
+    for bad, where in [
+        ("generate: {router: {contrast: {pairs: [[a]]}}}\n", "contrast.pairs"),
+        ("generate: {router: {contrast: {pairs: sometimes}}}\n", "contrast.pairs"),
+        ("generate: {router: {contrast: {extra: [czytania]}}}\n", "contrast.extra"),
+        ("topic_overrides: [a, b]\n", "topic_overrides"),
+        ("slot_values: {kto: Ania}\n", "slot_values.kto"),
+    ]:
+        result = settings_store.check(bad)
+        assert not result["ok"] and where in result["error"], bad

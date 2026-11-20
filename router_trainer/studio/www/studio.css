@@ -595,3 +595,5 @@ button.link { background: none; border: 0; padding: 0; color: inherit; font: inh
 .lesson-text strong, .lesson-text small { display: block; }
 .lesson-text small, .lesson-meta { color: var(--muted); font-size: 12px; }
 .help-pop .help-lesson { margin-top: 6px; }
+/* a map edited as YAML in a form (Your home's words): a few lines, not a whole editor */
+textarea.code.small { min-height: 0; height: auto; max-height: 220px; resize: vertical; }

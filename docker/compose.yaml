@@ -29,6 +29,8 @@ services:
       # workspace (inputs, tests, datasets, runs, the trainer's Ollama models), Hugging Face downloads
       - ${STUDIO_DATA:-./data}:/data
       - ./config:/home/trainer/.config/router-trainer   # the login secret
+      # the machine's time zone: dates of files, logs and jobs match Home Assistant's (not UTC)
+      - /etc/localtime:/etc/localtime:ro
     shm_size: 16gb                  # PyTorch data loading
     deploy:
       resources:

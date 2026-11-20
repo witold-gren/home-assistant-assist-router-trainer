@@ -2,12 +2,51 @@
 // grey), the machine's power through Home Assistant, the machine check and the account.
 
 import {
-  action, ask, call, card, choice, el, field, getSetting, input, redraw, select, setSetting, settingCheck, settingNumber,
-  settingText, state, t, toast,
+  action, ask, call, card, choice, defaultSetting, el, field, getSetting, input, partText, redraw, select, setPartText,
+  setSetting, settingCheck, settingNumber, settingText, state, t, toast,
 } from "./common.js";
 
 const num = (path, hintKey) => field(path.at(-1), settingNumber(path), hintKey ? t(hintKey) : undefined);
 const text = (path, hintKey) => field(path.at(-1), settingText(path), hintKey ? t(hintKey) : undefined);
+const splitList = (value) => value.split(",").map((x) => x.trim()).filter(Boolean);
+
+/** A list as "a, b, c"; empty = the default. */
+const list = (path, hintKey) => field(path.at(-1), input((getSetting(path) || []).join(", "),
+  (v) => setSetting(path, splitList(v).length ? splitList(v) : null),
+  { placeholder: (defaultSetting(path) || []).join(", "), "data-setting": path.join(".") }), hintKey ? t(hintKey) : undefined);
+
+/** Pairs of topics as "a/b, c/d" (and "auto" where allowed); empty = the default. */
+const pairs = (path, hintKey, auto = false) => {
+  const value = getSetting(path);
+  const shown = value === "auto" ? "auto" : (value || []).map((pair) => pair.join("/")).join(", ");
+  const fallback = defaultSetting(path);
+  return field(path.at(-1), input(shown, (v) => {
+    const text = v.trim();
+    if (!text) return setSetting(path, null);
+    if (auto && text === "auto") return setSetting(path, "auto");
+    const parsed = splitList(text).map((pair) => pair.split("/").map((x) => x.trim()));
+    if (parsed.every((pair) => pair.length === 2 && pair[0] && pair[1])) setSetting(path, parsed);
+  }, { placeholder: fallback === "auto" ? "auto" : (fallback || []).map((pair) => pair.join("/")).join(", ") || "czytania/wiadomosci",
+    "data-setting": path.join(".") }), t(hintKey));
+};
+
+/** A map (key: value, one per line) edited as YAML; a line that is not YAML yet is kept until it is. */
+const mapping = (path, hintKey, placeholder) => {
+  const area = el("textarea", { class: "code small", rows: 4, spellcheck: "false", placeholder, "data-setting": path.join(".") });
+  area.value = partText(path).replace(/^\{\}\n?$/, "");
+  const error = el("p", { class: "field-error", hidden: true });
+  area.addEventListener("input", () => {
+    try {
+      setPartText(path, area.value.trim() ? area.value : "{}");
+      error.hidden = true;
+    } catch (err) {
+      error.textContent = t("yaml_error", { error: err.message });
+      error.hidden = false;
+    }
+  });
+  return el("div", { class: "field wide" }, el("span", {}, path.at(-1)), area, error, el("p", { class: "hint" }, t(hintKey)));
+};
+
 const group = (title, ...children) => el("div", { class: "form-group" }, el("h3", {}, title), el("div", { class: "grid-2" }, ...children));
 
 const ROLES = ["writer", "judge", "test_writer"];
@@ -104,6 +143,17 @@ const FORMS = {
       num(["generate", "router", "gibberish"]), num(["generate", "router", "max_per_topic"], "h_max_per_topic"),
       num(["generate", "router", "min_per_topic"], "h_min_per_topic"), num(["generate", "router", "noise"], "h_noise"),
       settingCheck(["generate", "router", "log_questions"], t("h_log_questions"))),
+    group(t("st_speech"),
+      settingCheck(["generate", "router", "recordings"], t("h_recordings")),
+      num(["generate", "router", "asr_per_topic"], "h_asr_per_topic"),
+      settingCheck(["generate", "router", "check_labels"], t("h_check_labels")),
+      text(["generate", "router", "speech", "piper"], "h_speech_host"), text(["generate", "router", "speech", "whisper"], "h_speech_host"),
+      list(["generate", "router", "speech", "voices"], "h_voices")),
+    group(t("st_contrast"),
+      num(["generate", "router", "contrast", "per_side"], "h_contrast_per_side"),
+      num(["generate", "router", "contrast", "max_pairs"], "h_contrast_max_pairs"),
+      pairs(["generate", "router", "contrast", "pairs"], "h_contrast_pairs", true),
+      pairs(["generate", "router", "contrast", "extra"], "h_contrast_extra")),
     group(t("st_control"),
       num(["generate", "control", "labels"], "h_labels"), num(["generate", "control", "sentences_per_label"])),
     group(t("st_answers"),
@@ -123,6 +173,16 @@ const FORMS = {
       getSetting(["export", "quantization"]) ?? "", (v) => setSetting(["export", "quantization"], v || null),
       { "data-setting": "export.quantization" }), t("h_quantization")),
     text(["export", "name"], "h_export_name"))],
+  home: () => [
+    group(t("st_home_topics"),
+      mapping(["topic_overrides"], "h_topic_overrides", "asystent_czytania_z_dnia: czytania\n'asystent_alarm#1': sterowanie"),
+      mapping(["intent_topics"], "h_intent_topics", "HassGetWeather: pogoda"),
+      text(["fallback_topic"], "h_fallback_topic")),
+    group(t("st_home_words"),
+      mapping(["slot_values"], "h_slot_values", "kto: [Ania, Tomek, mama, tata]"),
+      list(["music", "artists"], "h_music"), list(["music", "genres"]), list(["music", "playlists"]),
+      list(["shopping_items"], "h_shopping")),
+  ],
   evaluate: () => [group(t("s_evaluate"),
     field("unload_first", input((getSetting(["evaluate", "unload_first"]) || []).join(", "),
       (v) => setSetting(["evaluate", "unload_first"], v.split(",").map((x) => x.trim()).filter(Boolean)),
@@ -143,6 +203,31 @@ function modelForm(model) {
   ];
 }
 
+// A new model to compare: a name and its base on Hugging Face; the parameters are copied from the first model, so
+// it trains at once and can be tuned after.
+const newModel = { name: "", base: "", baseline: "" };
+
+function addModelForm(models) {
+  const error = el("p", { class: "field-error", hidden: true });
+  return el("div", { class: "form-group", "data-add-model": "" }, el("h3", {}, t("model_add")),
+    el("p", { class: "hint" }, t("model_add_hint")),
+    el("div", { class: "grid-2" },
+      field(t("model_add_name"), input(newModel.name, (v) => { newModel.name = v.trim(); }, { placeholder: "e4b_r32", "data-model-name": "" })),
+      field("base", input(newModel.base, (v) => { newModel.base = v.trim(); }, { placeholder: "unsloth/gemma-4-E4B-it", "data-model-base": "" }), t("h_base")),
+      field("baseline", input(newModel.baseline, (v) => { newModel.baseline = v.trim(); }, { placeholder: "gemma4:e4b", "data-model-baseline": "" }), t("h_baseline"))),
+    error,
+    el("div", { class: "actions" }, el("button", { class: "btn primary", "data-model-add": "", onclick: () => {
+      const { name, base, baseline } = newModel;
+      const problem = !/^[a-z0-9_]{1,30}$/.test(name) ? t("model_add_bad_name") : models.includes(name) ? t("model_add_exists")
+        : !base ? t("model_add_no_base") : null;
+      if (problem) { error.textContent = problem; error.hidden = false; return; }
+      const template = structuredClone(getSetting(["models", models[0]]) || state.status?.model_settings?.[models[0]] || {});
+      setSetting(["models", name], { ...template, base, ...(baseline ? { baseline } : {}) });
+      Object.assign(newModel, { name: "", base: "", baseline: "" });
+      select(`settings/models/${name}`);
+    } }, el("ha-icon", { icon: "mdi:plus" }), t("model_add_button"))));
+}
+
 /** A settings node the studio has a form for (none, "models", a section or models/<name>). */
 export function settingsKnown(id) {
   return !id || id === "models" || id in FORMS || (id.startsWith("models/") && id.length > 7);
@@ -150,7 +235,7 @@ export function settingsKnown(id) {
 
 /** The path of a settings node in trainer.yaml (the YAML on the side edits it). */
 export function settingsPath(id) {
-  if (!id) return null;
+  if (!id || id === "home") return null; // "home" is several top-level keys: no one part on the side
   return id.startsWith("models/") ? ["models", id.slice("models/".length)] : [id];
 }
 
@@ -163,13 +248,14 @@ export function renderSettings(id) {
   if (id === "models") {
     const models = Object.keys(getSetting(["models"]) || state.status?.model_settings || {});
     return card(t("s_models"), "settings", el("p", { class: "hint" }, t("models_intro")),
-      el("ul", { class: "samples" }, ...models.map((m) => el("li", {}, el("a", { href: `#/settings/models/${m}` }, m)))));
+      el("ul", { class: "samples" }, ...models.map((m) => el("li", {}, el("a", { href: `#/settings/models/${m}` }, m)))),
+      addModelForm(models));
   }
   const body = id.startsWith("models/") ? modelForm(id.slice("models/".length)) : FORMS[id]?.();
   if (!body) return null;
   return card(id.startsWith("models/") ? `${t("s_models")}: ${id.slice(7)}` : t(`s_${id}`), "settings",
     el("p", { class: "hint" }, t(`intro_${id.startsWith("models/") ? "models" : id}`)), ...body,
-    el("p", { class: "hint" }, t("settings_empty_default")));
+    el("p", { class: "hint" }, t(id === "home" ? "settings_empty_default_home" : "settings_empty_default")));
 }
 
 // --- the machine's power ---------------------------------------------------------------------------------

@@ -12,10 +12,15 @@ const choose = (key) => (app) => {
   app._dialog = null;
   app._select(key);
 };
+// what a click on the framed button does, for Next on a step that waits for it
+const click = (selector) => (app) => app.querySelector(selector)?.click();
 const status = (app) => app?._state?.status || {};
 const firstRun = (app) => status(app).runs?.[0]?.name;
 const activeTest = (app) => status(app).tests?.active || status(app).tests?.tests?.[0]?.name;
 const firstDataset = (app) => status(app).datasets?.[0]?.name;
+const firstModel = (app) => Object.keys(status(app).model_settings || {})[0] || "e2b";
+const setting = (path) => `[data-setting='${path}']`;
+const modelSetting = (key) => `[data-view^='settings/models/'] [data-setting$='.${key}']`;
 
 /** What a lesson needs in the workspace, and whether it has it. */
 export const NEEDS = {
@@ -33,7 +38,7 @@ export const LESSONS = [
     steps: [
       { key: "url", targets: ["[data-ha-url]"], side: "left", prepare: choose("ha") },
       { key: "token", targets: ["[data-ha-token]"], side: "left" },
-      { key: "check", targets: ["[data-ha-connect]"], side: "left", advance: "click" },
+      { key: "check", targets: ["[data-ha-connect]"], side: "left", advance: "click", act: click("[data-ha-connect]") },
       { key: "state", targets: ["[data-ha-state]"], fallback: ["[data-ha-connect]"], side: "left" },
     ],
   },
@@ -172,6 +177,103 @@ export const LESSONS = [
       { key: "live", targets: ["[data-node='live']"], side: "right" },
     ],
   },
+  // --- tuning: which models, how they learn, what to change when the result is weak ---------------------------
+  {
+    key: "models",
+    icon: "mdi:compare-horizontal",
+    help: [],
+    steps: [
+      { key: "list", targets: ["[data-view='settings/models']"], side: "inside", prepare: choose("settings/models") },
+      { key: "add", targets: ["[data-add-model]"], side: "left" },
+      { key: "base", targets: [modelSetting("base"), modelSetting("baseline")], side: "left", prepare: (app) => choose(`settings/models/${firstModel(app)}`)(app) },
+      { key: "pick", targets: ["[data-view='auto'] [data-chip]"], side: "left", prepare: choose("auto") },
+      { key: "compare", targets: ["[data-view='compare']"], side: "inside", prepare: choose("compare") },
+    ],
+  },
+  {
+    key: "tune",
+    icon: "mdi:tune-variant",
+    help: [],
+    steps: [
+      { key: "epochs", targets: [modelSetting("epochs")], side: "left", prepare: (app) => choose(`settings/models/${firstModel(app)}`)(app) },
+      { key: "rate", targets: [modelSetting("learning_rate")], side: "left" },
+      { key: "lora", targets: [modelSetting("lora_r"), modelSetting("lora_alpha")], side: "left" },
+      { key: "batch", targets: [modelSetting("batch_size"), modelSetting("grad_accum")], side: "left" },
+      { key: "memory", targets: [modelSetting("load_in_4bit"), modelSetting("max_seq_length")], side: "left" },
+      { key: "one", targets: ["[data-node='live']", "[data-node='compare']"], side: "right" },
+    ],
+  },
+  {
+    key: "fix",
+    icon: "mdi:wrench-outline",
+    help: [],
+    steps: [
+      { key: "broken", targets: ["[data-part]"], fallback: ["[data-view='compare']"], side: "left", prepare: choose("compare") },
+      { key: "confused", targets: [setting("generate.router.contrast.extra"), setting("generate.router.contrast.per_side")], side: "left", prepare: choose("settings/generate") },
+      { key: "templates", targets: [setting("generate.router.paraphrases_per_topic"), setting("generate.router.max_per_topic")], side: "left" },
+      { key: "speech", targets: [setting("generate.router.noise"), setting("generate.router.gibberish")], side: "left" },
+      { key: "describe", targets: ["[data-node='ha']", "[data-node='router']"], side: "right" },
+      { key: "overfit", targets: ["[data-loss-chart]", "[data-progress]"], fallback: ["[data-middle]"], side: "left", prepare: choose("live") },
+    ],
+  },
+  {
+    key: "data",
+    icon: "mdi:text-box-multiple-outline",
+    help: [],
+    steps: [
+      { key: "paraphrases", targets: [setting("generate.router.paraphrases_per_topic")], side: "left", prepare: choose("settings/generate") },
+      { key: "balance", targets: [setting("generate.router.max_per_topic"), setting("generate.router.min_per_topic")], side: "left" },
+      { key: "sources", targets: [setting("generate.router.native_intents"), setting("generate.router.per_template"), setting("generate.router.knowledge"), setting("generate.router.gibberish")], side: "left" },
+      { key: "log", targets: [setting("generate.router.log_questions")], side: "left" },
+      { key: "noise", targets: [setting("generate.router.noise")], side: "left" },
+      { key: "seed", targets: [setting("generate.seed")], side: "left" },
+    ],
+  },
+  {
+    key: "speech",
+    icon: "mdi:microphone-outline",
+    help: [],
+    steps: [
+      { key: "recordings", targets: [setting("generate.router.recordings")], side: "left", prepare: choose("settings/generate") },
+      { key: "asr", targets: [setting("generate.router.asr_per_topic")], side: "left" },
+      { key: "servers", targets: [setting("generate.router.speech.piper"), setting("generate.router.speech.whisper"), setting("generate.router.speech.voices")], side: "left" },
+      { key: "labels", targets: [setting("generate.router.check_labels")], side: "left" },
+    ],
+  },
+  {
+    key: "contrast",
+    icon: "mdi:call-split",
+    help: [],
+    steps: [
+      { key: "what", targets: [setting("generate.router.contrast.per_side")], side: "left", prepare: choose("settings/generate") },
+      { key: "pairs", targets: [setting("generate.router.contrast.pairs"), setting("generate.router.contrast.max_pairs")], side: "left" },
+      { key: "extra", targets: [setting("generate.router.contrast.extra")], side: "left" },
+      { key: "errors", targets: ["[data-node='compare']"], side: "right" },
+    ],
+  },
+  {
+    key: "roles",
+    icon: "mdi:account-voice",
+    help: [],
+    steps: [
+      { key: "only", targets: ["[data-auto-router-only]"], side: "left", prepare: choose("auto") },
+      { key: "control", targets: [setting("generate.control.labels"), setting("generate.control.sentences_per_label")], side: "left", prepare: choose("settings/generate") },
+      { key: "answers", targets: [setting("generate.answers.given"), setting("generate.answers.live_per_topic"), setting("generate.answers.wikipedia")], side: "left" },
+      { key: "mix", targets: [setting("dataset.mix.router"), setting("dataset.mix.control"), setting("dataset.mix.answers")], side: "left", prepare: choose("settings/dataset") },
+      { key: "dev", targets: [setting("dataset.dev_fraction")], side: "left" },
+    ],
+  },
+  {
+    key: "test_size",
+    icon: "mdi:ruler-square-compass",
+    help: [],
+    steps: [
+      { key: "size", targets: [setting("test.router_per_topic"), setting("test.control"), setting("test.answers")], side: "left", prepare: choose("settings/test") },
+      { key: "real", targets: [setting("test.real_per_topic"), setting("test.real_max"), setting("test.wikipedia")], side: "left" },
+      { key: "holdout", targets: [setting("holdout.word_similarity"), setting("holdout.char_similarity")], side: "left", prepare: choose("settings/holdout") },
+      { key: "same", targets: ["[data-node='tests']"], side: "right" },
+    ],
+  },
   // --- set up once ---------------------------------------------------------------------------------------------
   {
     key: "teacher",
@@ -228,11 +330,33 @@ export const LESSONS = [
     ],
   },
   {
+    key: "home_words",
+    icon: "mdi:home-edit-outline",
+    help: [],
+    steps: [
+      { key: "overrides", targets: [setting("topic_overrides")], side: "left", prepare: choose("settings/home") },
+      { key: "intents", targets: [setting("intent_topics"), setting("fallback_topic")], side: "left" },
+      { key: "slots", targets: [setting("slot_values")], side: "left" },
+      { key: "music", targets: [setting("music.artists"), setting("music.genres"), setting("music.playlists"), setting("shopping_items")], side: "left" },
+    ],
+  },
+  {
+    key: "ollama",
+    icon: "mdi:robot-outline",
+    help: [],
+    steps: [
+      { key: "home", targets: [setting("ollama.jetson"), setting("ollama.version")], side: "left", prepare: choose("settings/ollama") },
+      { key: "teacher", targets: [setting("ollama.teacher"), setting("ollama.test_writer")], side: "left" },
+      { key: "export", targets: [setting("export.quantization"), setting("export.name")], side: "left", prepare: choose("settings/export") },
+      { key: "unload", targets: [setting("evaluate.unload_first")], side: "left", prepare: choose("settings/evaluate") },
+    ],
+  },
+  {
     key: "look",
     icon: "mdi:palette-outline",
     help: [],
     steps: [
-      { key: "gear", targets: ["[data-settings]"], side: "below-end", advance: "click", prepare: (app) => { app._gear = false; } },
+      { key: "gear", targets: ["[data-settings]"], side: "below-end", advance: "click", act: (app) => { app._gear = true; }, prepare: (app) => { app._gear = false; } },
       { key: "choices", targets: ["[data-gear-box]"], fallback: ["[data-settings]"], side: "left" },
       { key: "learn", targets: ["[data-gear-tour]", "[data-gear-lessons]"], fallback: ["[data-settings]"], side: "left" },
     ],
@@ -243,8 +367,13 @@ export const LESSONS = [
 export const GROUPS = [
   ["lessons_start", ["connect", "fetch", "auto", "result", "progress"]],
   ["lessons_more", ["test", "generate", "dataset", "train", "resume", "compare", "try", "jobs"]],
-  ["lessons_once", ["teacher", "handoff", "settings", "yaml", "power", "look"]],
+  ["lessons_tune", ["models", "tune", "fix", "data", "speech", "contrast", "roles", "test_size"]],
+  ["lessons_once", ["teacher", "handoff", "home_words", "ollama", "settings", "yaml", "power", "look"]],
 ];
+
+// The only buttons a lesson may wait to be clicked: quick ones that change nothing heavy. Training, export,
+// "Use in Assist Router", Stop and switching the machine off are framed with a note, never clicked by Next.
+export const CLICK_TARGETS = ["[data-ha-connect]", "[data-settings]"];
 
 export const lessonByKey = (key) => LESSONS.find((lesson) => lesson.key === key) ?? null;
 

@@ -14,6 +14,7 @@ export const SETTINGS = [
   ["dataset", "mdi:database-outline"],
   ["export", "mdi:export-variant"],
   ["evaluate", "mdi:scale-balance"],
+  ["home", "mdi:home-edit-outline"],
 ];
 
 const node = (key, icon, label, extra = {}) => ({ key, icon, label, children: [], ...extra });

@@ -116,8 +116,32 @@ export function bubbleAt(frame, side, size, width = window.innerWidth, height = 
     "below-end": { left: frame.left + frame.width - bubble.width, top: below },
     inside: { left: frame.left + 24, top: frame.top + frame.height - bubble.height - 24 },
   };
-  const place = places[side] ?? places.below;
-  return { left: clampX(place.left), top: clampY(place.top), width: bubble.width };
+  places.above = { left: frame.left, top: frame.top - bubble.height - GAP };
+  const at = (place) => ({ left: clampX(place.left), top: clampY(place.top), width: bubble.width });
+  // The bubble never covers the frame: when the chosen side has no room (it is pushed back over the frame), the
+  // other sides are tried; "inside" a large part is meant to overlap it. None free: the chosen one.
+  const covers = (box) => box.left < frame.left + frame.width && box.left + box.width > frame.left
+    && box.top < frame.top + frame.height && box.top + bubble.height > frame.top;
+  const chosen = at(places[side] ?? places.below);
+  if (side === "inside" || !covers(chosen)) return chosen;
+  for (const other of ["right", "left", "below", "above", "below-end"]) {
+    const box = at(places[other]);
+    if (!covers(box)) return box;
+  }
+  return chosen;
+}
+
+/** Whether an element is cut off: outside the window, or outside a scrolled column it sits in. */
+export function clipped(element, width = window.innerWidth, height = window.innerHeight) {
+  const box = element.getBoundingClientRect();
+  if (box.top < 0 || box.left < 0 || box.bottom > height || box.right > width) return true;
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const style = getComputedStyle(parent);
+    if (!/(auto|scroll|hidden)/.test(style.overflowY + style.overflowX)) continue;
+    const outer = parent.getBoundingClientRect();
+    if (box.top < outer.top || box.bottom > outer.bottom || box.left < outer.left || box.right > outer.right) return true;
+  }
+  return false;
 }
 
 export class RouterTrainerTour extends LitElement {
@@ -148,7 +172,7 @@ export class RouterTrainerTour extends LitElement {
       const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(event.composedPath()[0]?.tagName);
       if (event.key !== "Escape" && typing) return;
       if (event.key === "Escape") this._finish();
-      else if (event.key === "ArrowRight" || event.key === "Enter") this._go(1);
+      else if (event.key === "ArrowRight" || event.key === "Enter") this._next(this._steps?.[this._index]);
       else if (event.key === "ArrowLeft") this._go(-1);
       else return;
       event.preventDefault();
@@ -202,6 +226,12 @@ export class RouterTrainerTour extends LitElement {
     this._index = next;
   }
 
+  // Next on a step that waits for a click does what the click does (`act`), so the following steps have their part.
+  _next(step) {
+    if (step?.advance === "click") step.act?.(this.host);
+    this._go(1);
+  }
+
   _finish() {
     if (this.lesson) {
       // A lesson counts as done once it was gone through to its last step.
@@ -224,13 +254,12 @@ export class RouterTrainerTour extends LitElement {
     // belongs to until then.
     const frame = frameOf(this.root, targets) ?? (step.fallback ? frameOf(this.root, step.fallback) : null);
     this._frame = frame;
-    // A part below or above the window (a button at the end of a long view) is scrolled to, once a step; its own
-    // box tells (the frame is already cut to the window).
+    // A part cut off by the window or by its scrolled column (a button at the end of a long view) is scrolled to,
+    // once a step; its own box tells (the frame is already cut to the window).
     const first = targets.map((target) => findTarget(this.root, target)).find(visible);
-    const box = first?.getBoundingClientRect();
-    if (box && this._scrolled !== this._index && (box.bottom > window.innerHeight || box.top < 0)) {
+    if (first && this._scrolled !== this._index && clipped(first)) {
       this._scrolled = this._index;
-      first.scrollIntoView({ block: "center" });
+      first.scrollIntoView({ block: "nearest", inline: "nearest" });
       requestAnimationFrame(() => this.requestUpdate());
     }
     const at = bubbleAt(frame, step.side, { height: this._height });
@@ -262,7 +291,7 @@ export class RouterTrainerTour extends LitElement {
           ${this._index
             ? html`<button class="ghost" data-tour-back @click=${() => this._go(-1)}>${t("studio_tour_back")}</button>`
             : html`<button class="link" data-tour-skip @click=${this._finish}>${t("studio_tour_skip")}</button>`}
-          <button class="primary" data-tour-next @click=${() => this._go(1)}>
+          <button class="primary" data-tour-next @click=${() => this._next(step)}>
             ${last ? t("studio_tour_done") : t("studio_tour_next")}
           </button>
         </div>

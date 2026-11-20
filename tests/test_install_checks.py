@@ -200,3 +200,12 @@ def test_compose_builds_the_studio_stage_by_name() -> None:
     ]
     assert target == "app" and target in stages
     assert {"demo", "docs"} <= set(stages)
+
+
+def test_the_studio_runs_in_the_machines_time_zone() -> None:
+    """gpu-studio.md section 3: without /etc/localtime the container runs in UTC and the dates of files, logs and
+    jobs are 1-2 hours off Home Assistant's."""
+    import yaml
+
+    compose = yaml.safe_load((REPO / "docker" / "compose.yaml").read_text(encoding="utf-8"))
+    assert "/etc/localtime:/etc/localtime:ro" in compose["services"]["studio"]["volumes"]
