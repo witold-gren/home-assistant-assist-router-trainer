@@ -37,6 +37,11 @@ def studio_texts(language: str) -> set[str]:
     source = (ROOT / "router_trainer" / "studio" / "www" / "i18n.js").read_text(encoding="utf-8")
     english, polish = source.split("\n  pl: {", 1)
     block = english if language == "en" else polish
+    tour = (ROOT / "router_trainer" / "studio" / "www" / "tour-texts.js").read_text(
+        encoding="utf-8"
+    )
+    english_tour, polish_tour = tour.split("\n  pl: {", 1)
+    block += english_tour if language == "en" else polish_tour
     found = {
         m.replace('\\"', '"') for m in re.findall(r'^\s+\w+: "((?:[^"\\]|\\.)*)",?$', block, re.M)
     }

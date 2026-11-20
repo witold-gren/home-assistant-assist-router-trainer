@@ -2,7 +2,9 @@
 
 ``assist_router/training/export`` (Assist Router 0.1.8+, administrators only, read-only) hands
 over router.yaml, the log of unrecognized commands, the test files, the automations with a
-`conversation` trigger (also those from packages) and custom_sentences. They are written to
+`conversation` trigger (also those from packages) and custom_sentences. The home's voice commands
+(the speech-to-text WAV files of ``assist_pipeline: debug_recording_dir``, Assist Router 0.1.11+)
+come with ``fetch_recordings`` into ``inputs/recordings`` - only the new ones. They are written to
 the same files of workspace/inputs that the generators have always read, so nothing else
 changes; ``inputs/ha_export.json`` keeps what came (the router's version for the panel).
 """
@@ -10,6 +12,7 @@ changes; ``inputs/ha_export.json`` keeps what came (the router's version for the
 from __future__ import annotations
 
 import asyncio
+import base64
 import csv
 import io
 import json
@@ -24,8 +27,17 @@ from .config import Workspace, load_settings, mark_token_rejected, token_rejecte
 from .ha_client import Connection, HaError, TokenRejected, load_connection
 
 COMMAND = "assist_router/training/export"
+RECORDINGS = "assist_router/training/recordings"
+RECORDING_FILES = "assist_router/training/recording_files"
+# the Assist Router version that brought each command
+NEEDED = {COMMAND: "0.1.8", RECORDINGS: "0.1.11", RECORDING_FILES: "0.1.11"}
+PATHS_PER_CALL = 200
 EXPORT_FILE = "ha_export.json"  # in inputs/: version, language, when, how much came
 TIMEOUT = 60
+
+
+class OldRouter(HaError):
+    """Assist Router in Home Assistant does not know a command yet."""
 
 
 def websocket_url(url: str) -> str:
@@ -35,7 +47,8 @@ def websocket_url(url: str) -> str:
     return f"{'wss' if scheme == 'https' else 'ws'}://{rest}/api/websocket"
 
 
-async def _export(connection: Connection) -> dict[str, Any]:
+async def _session(connection: Connection, work):
+    """One authenticated WebSocket; ``work(call)`` sends commands, ``call`` returns the result."""
     import aiohttp
 
     timeout = aiohttp.ClientTimeout(total=TIMEOUT)
@@ -50,32 +63,46 @@ async def _export(connection: Connection) -> dict[str, Any]:
             raise TokenRejected(
                 "Home Assistant 401: the token is wrong or expired - make a new long-lived token"
             )
-        await socket.send_json({"id": 1, "type": COMMAND})
-        answer = await socket.receive_json()
-    if answer.get("success"):
-        return answer["result"]
-    error = answer.get("error") or {}
+        number = 0
+
+        async def call(message: dict[str, Any]) -> Any:
+            nonlocal number
+            number += 1
+            await socket.send_json({"id": number, **message})
+            answer = await socket.receive_json()
+            if answer.get("success"):
+                return answer["result"]
+            raise _refused(answer.get("error") or {}, message["type"])
+
+        return await work(call)
+
+
+def _refused(error: dict[str, Any], command: str) -> HaError:
     if error.get("code") == "unknown_command":
-        raise HaError(
-            "Assist Router in Home Assistant is too old for the trainer - update it to 0.1.8 "
-            "or newer (it adds assist_router/training/export)"
+        return OldRouter(
+            "Assist Router in Home Assistant is too old for the trainer - update it to "
+            f"{NEEDED.get(command, '0.1.8')} or newer (it adds {command})"
         )
     if error.get("code") == "unauthorized":
-        raise HaError(
+        return HaError(
             "Home Assistant refused the export: the token's user must be an administrator"
         )
-    raise HaError(f"Home Assistant: {error.get('message') or error.get('code') or 'refused'}")
+    return HaError(f"Home Assistant: {error.get('message') or error.get('code') or 'refused'}")
 
 
-def export(ws: Workspace) -> dict[str, Any]:
-    """The export answer for the saved connection (a rejected token is never sent again)."""
+async def _export(connection: Connection) -> dict[str, Any]:
+    return await _session(connection, lambda call: call({"type": COMMAND}))
+
+
+def _run(ws: Workspace, work) -> Any:
+    """``work(connection)`` for the saved connection (a rejected token is never sent again)."""
     if token_rejected(ws):
         raise TokenRejected("Home Assistant rejected the token - connect Home Assistant anew")
     connection = load_connection(ws)
     if not connection.ready:
         raise HaError("no Home Assistant connection - connect Home Assistant first")
     try:
-        return asyncio.run(_export(connection))
+        return asyncio.run(work(connection))
     except TokenRejected:
         mark_token_rejected(ws)
         raise
@@ -85,6 +112,11 @@ def export(ws: Workspace) -> dict[str, Any]:
         if isinstance(err, HaError):
             raise
         raise HaError(f"Home Assistant at {connection.url}: {type(err).__name__}: {err}") from None
+
+
+def export(ws: Workspace) -> dict[str, Any]:
+    """The export answer for the saved connection."""
+    return _run(ws, _export)
 
 
 def log_csv(rows: list[dict[str, str]]) -> str:
@@ -157,3 +189,75 @@ def last(ws: Workspace) -> dict[str, Any] | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+
+
+# --- the home's voice commands -------------------------------------------------------------------
+
+
+def recordings_folder(ws: Workspace) -> Path:
+    return ws.root / "inputs" / "recordings"
+
+
+async def _recordings(connection: Connection, folder: Path) -> dict[str, Any]:
+    async def work(call) -> dict[str, Any]:
+        listed = await call({"type": RECORDINGS})
+        files = listed.get("files") or []
+        missing = []
+        for item in files:
+            path = _inside(folder, item["path"])
+            if path is not None and not (path.is_file() and path.stat().st_size == item["size"]):
+                missing.append(item["path"])
+        fetched = 0
+        while missing:
+            answer = await call({"type": RECORDING_FILES, "paths": missing[:PATHS_PER_CALL]})
+            served = answer.get("files") or []
+            if not served:
+                break  # nothing more comes (files removed meanwhile)
+            for item in served:
+                path = _inside(folder, item["path"])
+                if path is None:
+                    continue
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(base64.b64decode(item["data"]))
+                fetched += 1
+            done = {item["path"] for item in served}
+            missing = [p for p in missing if p not in done]
+            print(f"recordings: {fetched} fetched", flush=True)
+        return {
+            "configured": bool(listed.get("configured")),
+            "in_home_assistant": len(files),
+            "fetched": fetched,
+            "missing": len(missing),
+        }
+
+    return await _session(connection, work)
+
+
+def _inside(folder: Path, relative: str) -> Path | None:
+    """The local path of a recording, None for anything that would leave the folder."""
+    path = (folder / relative).resolve()
+    base = folder.resolve()
+    return path if path.suffix == ".wav" and path.is_relative_to(base) else None
+
+
+def fetch_recordings(ws: Workspace) -> dict[str, Any]:
+    """New voice command recordings from Home Assistant into inputs/recordings (the ones already
+    here are not sent again). An Assist Router older than 0.1.11 is said, not an error."""
+    folder = recordings_folder(ws)
+    try:
+        return _run(ws, lambda connection: _recordings(connection, folder))
+    except OldRouter as err:
+        return {"configured": None, "fetched": 0, "error": str(err)}
+
+
+def fetch_all(ws: Workspace) -> dict[str, Any]:
+    """The export and, when the router data uses them (``generate.router.recordings``), the new
+    voice command recordings - what "Fetch from HA", ``router-trainer fetch`` and the automatic
+    training get."""
+    summary = fetch(ws)
+    if load_settings(ws)["generate"]["router"].get("recordings"):
+        try:
+            summary["recordings"] = fetch_recordings(ws)
+        except (HaError, OSError, ValueError) as err:  # the rest came - recordings are extra
+            summary["recordings"] = {"fetched": 0, "error": str(err)}
+    return summary

@@ -581,3 +581,17 @@ button.link { background: none; border: 0; padding: 0; color: inherit; font: inh
 .folded-col { background: var(--panel); display: flex; justify-content: center; padding-top: 10px; min-width: 0; overflow: hidden; }
 .folded-col .fold-col { padding: 4px 6px; }
 .splitter.off { cursor: default; background: var(--line); pointer-events: none; }
+
+/* lessons (gpu-studio.md section 5a): the list of ⚙ → Lessons and "Show me step by step" of a card's "?" */
+.lessons-group { margin: 14px 0 6px; color: var(--muted); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+.lessons-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; }
+.lesson { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px;
+  color: var(--text); background: none; text-align: left; cursor: pointer; font: inherit; }
+.lesson:hover:not([disabled]) { border-color: var(--accent); }
+.lesson[disabled] { opacity: 0.55; cursor: default; }
+.lesson > ha-icon { --mdc-icon-size: 22px; color: var(--accent); }
+.lesson.done > ha-icon, .lesson .tick { color: var(--green); }
+.lesson-text { flex: 1; min-width: 0; }
+.lesson-text strong, .lesson-text small { display: block; }
+.lesson-text small, .lesson-meta { color: var(--muted); font-size: 12px; }
+.help-pop .help-lesson { margin-top: 6px; }

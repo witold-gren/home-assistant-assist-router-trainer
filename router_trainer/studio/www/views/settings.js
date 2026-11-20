@@ -2,7 +2,7 @@
 // grey), the machine's power through Home Assistant, the machine check and the account.
 
 import {
-  action, ask, call, card, choice, el, field, getSetting, input, select, setSetting, settingCheck, settingNumber,
+  action, ask, call, card, choice, el, field, getSetting, input, redraw, select, setSetting, settingCheck, settingNumber,
   settingText, state, t, toast,
 } from "./common.js";
 
@@ -10,10 +10,92 @@ const num = (path, hintKey) => field(path.at(-1), settingNumber(path), hintKey ?
 const text = (path, hintKey) => field(path.at(-1), settingText(path), hintKey ? t(hintKey) : undefined);
 const group = (title, ...children) => el("div", { class: "form-group" }, el("h3", {}, title), el("div", { class: "grid-2" }, ...children));
 
+const ROLES = ["writer", "judge", "test_writer"];
+const PROVIDERS = ["ollama", "openai", "claude", "manual"];
+let keys = null; // {openai: bool, claude: bool} - asked once per visit
+const keyDraft = { openai: "", claude: "" };
+const checks = {}; // role -> the last answer of Check
+const handoffState = { writer: "", judge: "" }; // answers pasted or loaded, per role
+
+function roleForm(role) {
+  const path = (key) => ["teacher", role, key];
+  const provider = getSetting(path("provider")) || "ollama";
+  const check = checks[role];
+  return group(t(`teacher_${role}`),
+    field(t("teacher_provider"), choice(PROVIDERS.map((p) => [p, t(`provider_${p}`)]), provider,
+      (v) => { setSetting(path("provider"), v); redraw(); }, { "data-teacher-provider": role }), t(`h_teacher_${role}`)),
+    provider === "manual" ? null : text(path("model"), provider === "ollama" ? "h_teacher_model_ollama" : `h_teacher_model_${provider}`),
+    provider === "openai" ? text(path("base_url"), "h_teacher_base_url") : null,
+    provider === "claude" ? field("effort", choice([["", "low"], ["medium", "medium"], ["high", "high"]],
+      getSetting(path("effort")) ?? "", (v) => setSetting(path("effort"), v || null), { "data-setting": `teacher.${role}.effort` }),
+      t("h_teacher_effort")) : null,
+    el("div", { class: "actions" },
+      el("button", { class: "btn", "data-teacher-check": role, onclick: async (e) => {
+        checks[role] = await action("teacher_check", { role }, e.currentTarget);
+        redraw();
+      } }, el("ha-icon", { icon: "mdi:stethoscope" }), t("teacher_check")),
+      check ? el("span", { class: check.ok ? "ok" : "warn", "data-teacher-answer": role }, check.message) : null));
+}
+
+function keysForm() {
+  if (keys === null) {
+    keys = {};
+    call("action", { action: "teacher_keys" }).then((answer) => { keys = answer.result || {}; redraw(); }).catch(() => {});
+  }
+  return group(t("teacher_keys"), ...["openai", "claude"].map((provider) => field(
+    `${t(`provider_${provider}`)} · ${keys[provider] ? t("teacher_key_saved") : t("teacher_key_none")}`,
+    el("div", { class: "actions" },
+      input(keyDraft[provider], (v) => { keyDraft[provider] = v; }, { type: "password", autocomplete: "off", "data-teacher-key": provider }),
+      el("button", { class: "btn", onclick: async (e) => {
+        const answer = await action("teacher_key", { provider, key: keyDraft[provider] }, e.currentTarget);
+        if (answer) { keys = { ...keys, ...answer }; keyDraft[provider] = ""; toast(t("saved"), "ok"); redraw(); }
+      } }, el("ha-icon", { icon: "mdi:content-save" }), t("teacher_key_save")))),
+  ), el("p", { class: "hint" }, t("teacher_privacy")));
+}
+
+function save(name, content) {
+  const link = el("a", { href: URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" })), download: name });
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+function handoffForm(role) {
+  const area = el("textarea", { rows: 4, placeholder: t("handoff_paste"), "data-handoff-text": role });
+  area.value = handoffState[role];
+  area.addEventListener("input", () => { handoffState[role] = area.value; });
+  const file = el("input", { type: "file", accept: ".jsonl,.json,.txt,.csv,.md", "data-handoff-file": role });
+  file.addEventListener("change", async () => {
+    if (file.files?.[0]) { handoffState[role] = await file.files[0].text(); redraw(); }
+  });
+  return group(t(`handoff_${role}`),
+    el("p", { class: "hint" }, t(`h_handoff_${role}`)),
+    el("div", { class: "actions" },
+      el("button", { class: "btn", "data-handoff-export": role, onclick: async (e) => {
+        const result = await action("handoff_export", { role }, e.currentTarget);
+        if (!result) return;
+        for (const [name, content] of Object.entries(result.files || {})) save(`${role}-${name}`, content);
+        toast(t("handoff_exported", { count: result.tasks }), "ok");
+      } }, el("ha-icon", { icon: "mdi:download" }), t("handoff_export"))),
+    field(t("handoff_answers"), area), file,
+    el("div", { class: "actions" },
+      el("button", { class: "btn primary", "data-handoff-import": role, onclick: async (e) => {
+        const result = await action("handoff_import", { role, text: handoffState[role] }, e.currentTarget);
+        if (!result) return;
+        handoffState[role] = "";
+        toast(t(`handoff_imported_${role}`, result), "ok");
+        redraw();
+      } }, el("ha-icon", { icon: "mdi:clipboard-text-outline" }), t("handoff_import"))));
+}
+
 const FORMS = {
   ollama: () => [group(t("s_ollama"),
     text(["ollama", "jetson"], "h_jetson"), text(["ollama", "teacher"], "h_teacher"),
     text(["ollama", "test_writer"], "h_test_writer"), num(["ollama", "local_port"]), text(["ollama", "version"], "h_ollama_version"))],
+  teacher: () => {
+    const manual = ["writer", "judge"].filter((role) => getSetting(["teacher", role, "provider"]) === "manual");
+    return [...ROLES.map(roleForm), keysForm(), ...manual.map(handoffForm)];
+  },
   generate: () => [
     field("seed", settingNumber(["generate", "seed"]), t("h_seed")),
     group(t("st_router"),

@@ -2,6 +2,94 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+## [0.4.0] - 2026-11-20
+
+### Added
+- **Automatic training** (Start → Automatic training, `router-trainer auto`): one Start for the whole road as one
+  job - fetching from Home Assistant and the router code of its version, the test (Home Assistant's own or a new
+  one for the home, no review waiting), the snapshot, generating, the dataset, training of each chosen model,
+  export to the home Ollama and the comparison with the router model Assist Router uses now. The **Result** card
+  shows per model the accuracy and the time of choosing the topic, new against now, a verdict and the recommended
+  model.
+- **Use in Assist Router** (after a confirmation; `router-trainer router-model --use MODEL`): sets the router model
+  in Assist Router's options through Home Assistant's own options flow, the other options untouched; a model that
+  is not in the home Ollama is refused. **Restore** puts the earlier model back.
+- Guide: "Automatic training" in Step by step (PL/EN).
+- **Tour of the studio** (gpu-studio.md section 5a): the first time the studio opens in a browser, one part of the
+  screen at a time is framed with a bubble saying what it is and where it is set; ⚙ → Tour of the studio shows it
+  again, Esc or Skip ends it.
+- **Lessons** (⚙ → Lessons): 19 tasks of the trainer in three groups (the start, further steps, set up once), each a
+  short tour that goes where the task is done, frames one thing at a time and moves on when the framed button is
+  clicked; done lessons get a ✓. The "?" of a card offers its lesson ("Show me step by step"). Guide: The screen →
+  The tour and the lessons, two FAQ entries.
+- **Fixed contrast pairs** (`generate.router.contrast.extra`): pairs always added to the automatic ones (or to the
+  list), first - for a new topic that has no evaluation errors yet.
+- **Real speech in the router data:** natural questions read by Piper (every voice of the language) and written
+  by Whisper of Home Assistant - the real mistakes of speech recognition with the right topic; and the home's own
+  voice commands from `inputs/recordings` (Home Assistant's `debug_recording_dir`), written by Whisper and labelled
+  by the teacher. Resumable; skipped when the home server does not answer.
+- Automatic training: **Only choosing the topic** (`--roles router`) - no commands and answers are generated or
+  trained when the small model only takes over the router.
+- **Label check** of the router data (`check_labels`): every teacher sentence is read once more with the router's
+  own prompt; one that lands in another topic is dropped with its Whisper copies and the paraphrases refill it
+  (`generated/labels.json`, `generated/labels_dropped.jsonl`).
+- **Voice recordings from Home Assistant** (Assist Router 0.1.11+): "Fetch from HA", `router-trainer fetch` and the
+  automatic training bring the new speech-to-text recordings of `assist_pipeline: debug_recording_dir` into
+  `inputs/recordings` (only the ones not there yet) - no copying by hand.
+- **Home Assistant's `custom_sentences`** become router examples (source `custom`), like the built-in intents; an
+  intent of the home's own `intent_script` gets the teacher's topic or `topic_overrides` `intent:<name>`.
+- `router-trainer triggers`: every sentence trigger with its `id#number` key, topic and how it got it - the list
+  to write `topic_overrides` from for a new home. `topic_overrides` take one trigger of an automation (`id#n`).
+- `router-trainer languages [--check CODE]`: the language packs and what a new pack still lacks.
+- Guide: **How the data is made** (every stage, from Home Assistant to the dataset, and the steps for a new home)
+  and **A new language** (PL/EN).
+- **Contrast pairs** (`contrast`): sentences on both sides of the border of topics that get mixed up, the pairs
+  taken from the errors of the last evaluations (`pairs: auto`) or listed.
+
+- **The teacher of each role** (`teacher.writer`, `teacher.judge`, `teacher.test_writer`): the
+  studio's Ollama, any OpenAI-compatible API (OpenAI, OpenRouter, Groq, LM Studio, vLLM), Claude
+  (Anthropic API: structured outputs, a fallback model when a request is declined) or by hand -
+  e.g. Claude writes, the local Gemma judges. API answers are remembered (`generated/teacher/`), keys
+  saved in the studio (`workspace/secrets`, mode 600), Check per role, a privacy warning. Settings →
+  Teacher; guide: The teacher.
+- **By hand** (`provider: manual`, `router-trainer handoff export|import writer|judge`, studio
+  Export / Import): the writer's tasks (paraphrases, contrast pairs, commands per plan) for any AI
+  chat, the answers back as rows of the source `external` with the same checks; the judge's
+  sentences as prompts or a table to fill in - unjudged sentences wait outside the dataset.
+- **A new language**: `router-trainer language new CODE [--home] [--answers FILE]` writes a checked
+  machine translation of both packs, an example `router.yaml` and the test into
+  `workspace/languages/<code>/`, with `REVIEW.md` for a speaker; `router-trainer language check
+  CODE` runs both packs' checks. Guide: A new language (rewritten).
+- **Language packs as folders** (`languages/pl/`: `texts.yaml`, `words.yaml`, `grammar.py`): the
+  teacher prompts are `str.format` templates a translator edits without Python;
+  `router-trainer languages --check CODE|FOLDER` lists a pack's problems (names, `{fields}`, prompts
+  that do not fill in).
+
+### Changed
+- Language: without `language:` in `router.yaml` the data are made in Home Assistant's language (as the
+  integration does), when there is a pack for it. Automation triggers are read in the router language (they were
+  read as Polish) and Wikipedia titles come from `wikipedia_language` (they came from the Polish Wikipedia).
+  Inflection of test facts, the „Below the article” word and the state words that are ordinary words moved to the
+  language pack; accents and speaker names are handled for any language with Latin letters.
+- Generating is faster: every teacher call uses one context (Ollama reloaded the model whenever writing and
+  checking alternated between 4096 and 8192), the trainer's Ollama runs with two slots, flash attention and a
+  q8_0 cache, and control commands are written and read back in rounds, side by side.
+- Control commands: numbers as people say them („22”, „22,5” instead of „22.0”), and the "with a reason" style
+  asks for a short reason only.
+
+### Fixed
+- The demo answered the Automatic training view's question about Assist Router's router model with an error
+  ("The studio cannot be reached"); it shows the made-up home's model now.
+- The judge of the generated test was asked to copy facts "from {what}" literally: the template
+  missed its field.
+- The log, the recordings and the label check share one store of the judge's topics
+  (`generated/labels.json`) - a sentence is never judged twice.
+- Control commands that set a value outright („Ustaw 22 stopnie”) were thrown away: the teacher reads them back
+  with the change „ustaw”, which is the same as no change. A planned device that is found also counts under
+  another domain (a switch and a script of the same name).
+
 ## [0.3.0] - 2026-11-18
 
 ### Added

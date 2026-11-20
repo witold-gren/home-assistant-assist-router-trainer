@@ -57,6 +57,9 @@ SHOTS = {
     "studio-machine": ("machine", None),
     "studio-look": ("look", None),
     "studio-gear": ("overview", "gear"),
+    "studio-tour": ("overview", "tour"),
+    "studio-lessons": ("overview", "lessons"),
+    "studio-lesson": ("overview", "lesson"),
 }
 
 
@@ -121,6 +124,7 @@ def shots(port: int, out: Path = OUT) -> list[Path]:
             page.add_init_script(
                 f"localStorage.setItem('router-trainer-studio-lang', '{language}');"
                 "localStorage.setItem('router-trainer-studio-theme', 'dark');"
+                "localStorage.setItem('router-trainer-studio-tour', 'done');"  # the tour has pictures of its own
             )
             page.goto(f"http://127.0.0.1:{port}/login")
             page.fill("input[name=user]", CREDENTIALS[0])
@@ -143,13 +147,28 @@ def shots(port: int, out: Path = OUT) -> list[Path]:
                 if then == "gear":
                     page.click("[data-settings]")
                     page.wait_for_selector("[data-gear-box]")
+                if then == "tour":  # its second step: the tree framed
+                    page.click("[data-settings]")
+                    page.click("[data-gear-tour]")
+                    page.click("router-trainer-tour >> [data-tour-next]")
+                if then == "lessons":
+                    page.click("[data-settings]")
+                    page.click("[data-gear-lessons]")
+                    page.wait_for_selector("dialog[data-dialog=lessons]")
+                if then == "lesson":  # the first step of the lesson of automatic training
+                    page.click("[data-settings]")
+                    page.click("[data-gear-lessons]")
+                    page.click("[data-lesson='auto']")
+                    page.wait_for_selector("router-trainer-tour >> [data-tour-frame='test']")
                 page.wait_for_timeout(600)
                 target = out / language / f"{name}.png"
                 target.parent.mkdir(parents=True, exist_ok=True)
                 page.screenshot(path=target)
                 made.append(target)
-                if then == "gear":
+                if then in ("gear", "tour", "lesson"):
                     page.keyboard.press("Escape")
+                if then == "lessons":
+                    page.click("dialog[data-dialog=lessons] [data-close]")
                 if then == "save":
                     page.click("dialog[data-dialog=save] [data-close]")
                     page.click("[data-discard]")

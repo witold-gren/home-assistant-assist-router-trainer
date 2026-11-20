@@ -1,12 +1,13 @@
 // The tree of the studio: the steps in the order they are done, then the settings (trainer.yaml).
 // A node: {key, icon, label, children, count?, warn?, hint?, busy?, done?} (done: the step is behind you, a ✓); groups: {key: "g:…", label, children}.
 
-export const VIEWS = ["overview", "ha", "router", "tests", "generate", "datasets", "train", "live", "jobs", "runs",
+export const VIEWS = ["overview", "auto", "ha", "router", "tests", "generate", "datasets", "train", "live", "jobs", "runs",
   "compare", "try", "settings", "look", "power", "machine", "account"];
 
 // the parts of trainer.yaml with a form of their own (key in the tree -> path in the file)
 export const SETTINGS = [
   ["ollama", "mdi:robot-outline"],
+  ["teacher", "mdi:account-key-outline"],
   ["generate", "mdi:creation"],
   ["test", "mdi:clipboard-check-outline"],
   ["holdout", "mdi:snowflake"],
@@ -30,7 +31,12 @@ export function buildOutline({ state, data, t }) {
   const routerWarn = router.ha_version && !router.matches ? t("router_mismatch", { used: router.version || "?", ha: router.ha_version }) : null;
   const haWarn = state?.ha?.rejected ? t("ha_token_rejected") : null;
   return [
-    { key: "g:start", label: t("g_start"), children: [node("overview", "mdi:view-dashboard-outline", t("n_overview"))] },
+    {
+      key: "g:start", label: t("g_start"), children: [
+        node("overview", "mdi:view-dashboard-outline", t("n_overview")),
+        node("auto", "mdi:brain", t("n_auto"), { busy: job?.running && job.kind === "auto" }),
+      ],
+    },
     {
       key: "g:ha", label: t("g_ha"), children: [
         node("ha", "mdi:home-assistant", t("n_ha"), { warn: haWarn, hint: state?.ha?.checked?.name, done: Boolean(state?.inputs) }),

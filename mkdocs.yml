@@ -68,6 +68,9 @@ plugins:
             From zero to a model: Od zera do modelu
             The screen: Ekran
             Step by step: Krok po kroku
+            How the data is made: Jak powstają dane
+            The teacher: Nauczyciel
+            A new language: Nowy język
             Doing it well: Jak robić to dobrze
             Home Assistant and power: Home Assistant i zasilanie
             FAQ: FAQ
@@ -80,8 +83,11 @@ nav:
   - From zero to a model: guide.md
   - The screen: screen.md
   - Step by step: steps.md
+  - How the data is made: data.md
+  - The teacher: teacher.md
   - Doing it well: good-practice.md
   - Home Assistant and power: home-assistant.md
+  - A new language: languages.md
   - FAQ: faq.md
   - One standard: standard.md
   - Changelog: changelog.md

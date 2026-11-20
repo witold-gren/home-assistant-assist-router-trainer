@@ -326,6 +326,26 @@ class DemoHomeAssistant:
             },
         ]
 
+    def _open(self, path: str, data: bytes | None = None, method: str = "GET"):
+        """Assist Router's options flow (the router model on Automatic training): read only."""
+        import io
+
+        if path.startswith("/config/config_entries/entry"):
+            body = [{"entry_id": "demo", "state": "loaded"}]
+        elif method == "DELETE":
+            body = None
+        else:
+            choices = [
+                "gemma4:26b",
+                "assist-router-e2b-ft:demo-e2b",
+                "assist-router-e4b-ft:demo-e4b",
+            ]
+            body = {"flow_id": "demo", "type": "form", "step_id": "router", "data_schema": [
+                {"name": "router_model", "default": "gemma4:26b",
+                 "selector": {"select": {"options": choices}}},
+            ]}  # fmt: skip
+        return io.BytesIO(json.dumps(body).encode() if body is not None else b"")
+
 
 def fake_nvidia_smi(folder: Path) -> None:
     script = folder / "nvidia-smi"

@@ -211,7 +211,7 @@ class FakeContext:
     def rng(self, salt: str) -> random.Random:
         return random.Random(f"42:{salt}")
 
-    def teacher(self) -> Any:
+    def teacher(self, role: str = "writer") -> Any:
         return self.teacher_obj
 
 

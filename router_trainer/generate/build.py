@@ -41,8 +41,20 @@ def router_rows(
     settings = ctx.settings["generate"]["router"]
     holdout = ctx.holdout()
     by_topic: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    from ..teacher import is_manual
+    from . import labels
+
+    # judged by hand: a checked sentence without its topic yet waits outside the dataset
+    waiting_for = None
+    if is_manual(ctx.settings, "judge"):
+        waiting_for = (labels.Checker(ctx, label=lambda text: None), labels.checked_sources(ctx))
+    waiting = 0
     for row in read_jsonl(ctx.ws.generated / "router.jsonl"):
         if row["topic"] not in ctx.config.topics:
+            continue
+        checker, sources = waiting_for or (None, ())
+        if checker and row.get("source") in sources and not checker.known(row["text"]):
+            waiting += 1
             continue
         hit = holdout.match(row["text"])
         if hit:
@@ -50,6 +62,10 @@ def router_rows(
                 rejected.append({"role": "router", "text": row["text"], "test": hit})
             continue
         by_topic[row["topic"]].append(row)
+    if waiting:
+        print(
+            f"router: {waiting} sentences wait for the judge (router-trainer handoff)", flush=True
+        )
     out = []
     for topic, rows in by_topic.items():
         rng.shuffle(rows)
@@ -112,12 +128,17 @@ def answer_rows(ctx: Context) -> list[dict[str, Any]]:
     return out
 
 
-def build(ctx: Context, name: str) -> Path:
+ROLES = ("router", "control", "answers")
+
+
+def build(ctx: Context, name: str, roles: tuple[str, ...] = ROLES) -> Path:
+    """``roles`` - the roles the model will play; the others are left out of the dataset (a
+    model that only chooses the topic needs no commands or answers)."""
     stage("dataset")
     rng = ctx.rng("dataset")
     holdout = ctx.holdout()
     home_data = ctx.home_data()
-    mix = ctx.settings["dataset"]["mix"]
+    mix = {**ctx.settings["dataset"]["mix"], **{r: 0.0 for r in ROLES if r not in roles}}
     fraction = float(ctx.settings["dataset"]["dev_fraction"])
 
     rejected: list[dict[str, Any]] = []

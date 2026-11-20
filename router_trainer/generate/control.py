@@ -18,7 +18,8 @@ from typing import Any
 
 from ..context import Context
 from ..holdout import Holdout
-from .common import JsonlWriter, list_schema, progress, sentences_of, stage
+from ..teacher import PARALLEL
+from .common import JsonlWriter, in_parallel, list_schema, progress, sentences_of, stage
 
 # kind -> weight (how often it is planned)
 KINDS = {
@@ -255,27 +256,42 @@ def details(ctx: Context, label: Label) -> list[str]:
         elif value is True:
             out.append(names[key])
         else:
-            out.append(f"{names[key]}: {value}")
+            out.append(f"{names[key]}: {spoken_number(value)}")
     return out
+
+
+def spoken_number(value: Any) -> Any:
+    """22.0 -> 22, 22.5 -> „22,5” - as people say it, not as Python prints it."""
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else str(value).replace(".", ",")
+    return value
 
 
 def _text_ok(expected: str, got: Any) -> bool:
     return isinstance(got, str) and expected.lower() in got.lower()
 
 
-def matches(label: Label, command: Any, device: str | None) -> bool:
-    """Does the parsed command say what was planned?"""
+def matches(label: Label, command: Any, device: str | None, set_word: str | None = None) -> bool:
+    """Does the parsed command say what was planned?
+
+    ``set_word`` - the language's "set" change („ustaw”): a value set outright, the same as no
+    change. A planned device that was found counts even under another domain (a switch and a
+    script of the same name)."""
     if command is None:
         return False
     fields = label.fields
     if command.intent != fields["intent"]:
         return False
-    if fields.get("domain") and command.domain != fields["domain"]:
+    found_planned = bool(label.device) and device == label.device
+    if fields.get("domain") and command.domain != fields["domain"] and not found_planned:
         return False
     # a device command without a planned room may name the room (it is part of many names)
     if ("area" in fields or label.device is None) and command.area != fields.get("area"):
         return False
-    for key in ("change", "color", "white", "media_class"):
+    change = None if command.change == set_word else command.change
+    if change != (None if fields.get("change") == set_word else fields.get("change")):
+        return False
+    for key in ("color", "white", "media_class"):
         if getattr(command, key) != fields.get(key):
             return False
     if bool(command.all) != bool(fields.get("all")) or bool(command.radio) != bool(
@@ -316,8 +332,46 @@ def answer_fields(command: Any) -> dict[str, Any]:
     }
 
 
+# labels per round: their sentences are written side by side, then all of them are read back
+# side by side - the long control prompt stays in the teacher's cache for the whole round
+BATCH = 24
+
+
+def plans(ctx: Context, home_data: dict[str, Any]) -> list[tuple[int, Label, str, int]]:
+    """Every planned command: (index, plan, style, seed) - the same on every run (the handoff
+    of a manual writer exports exactly these)."""
+    rng = ctx.rng("control")
+    out = []
+    for index in range(ctx.settings["generate"]["control"]["labels"]):
+        label = None
+        while label is None:
+            label = plan(ctx, home_data, rng)
+        style = ctx.pack.COMMAND_STYLES[index % len(ctx.pack.COMMAND_STYLES)]
+        out.append((index, label, style, rng.randrange(1 << 30)))
+    return out
+
+
+def external_sentences(ctx: Context) -> dict[int, list[str]]:
+    """Sentences a manual writer wrote for the plans (router-trainer handoff import writer)."""
+    from .common import read_jsonl
+
+    out: dict[int, list[str]] = {}
+    for row in read_jsonl(ctx.ws.generated / "handoff" / "control-external.jsonl"):
+        out.setdefault(int(row["label"]), []).append(row["text"])
+    return out
+
+
 def generate(ctx: Context) -> Any:
     """Write workspace/generated/control.jsonl (resumable)."""
+    from ..teacher import is_manual
+
+    if is_manual(ctx.settings, "judge"):
+        raise RuntimeError(
+            "control: parsing the commands back needs a model judge (teacher.judge: ollama, "
+            "openai or claude) - by hand it would be the label itself"
+        )
+    manual_writer = is_manual(ctx.settings, "writer")
+    external = external_sentences(ctx) if manual_writer else {}
     stage("control")
     settings = ctx.settings["generate"]["control"]
     holdout: Holdout = ctx.holdout()
@@ -326,78 +380,101 @@ def generate(ctx: Context) -> Any:
     system_messages = ctx.integ.control_messages(home_data, household, "")[:1]
     schema = ctx.integ.control_schema(home_data)
     key = ctx.pack.SENTENCES_KEY
-    teacher = ctx.teacher()
-    rng = ctx.rng("control")
+    teacher, judge = ctx.teacher("writer"), ctx.teacher("judge")
     out = ctx.ws.generated / "control.jsonl"
     target = settings["labels"] * settings["sentences_per_label"]
+    counts = {"rejected": 0, "holdout": 0}
+
+    def write(job: tuple[int, Label, str, int]) -> list[str]:
+        index, label, style, seed = job
+        if manual_writer:
+            return external.get(index, [])
+        prompt = ctx.pack.command_prompt(
+            details(ctx, label), settings["sentences_per_label"], style
+        )
+        reply = teacher.json(
+            [{"role": "user", "content": prompt}],
+            list_schema(key),
+            temperature=0.9,
+            num_predict=600,
+            seed=seed,
+        )
+        return sentences_of(reply, key)
+
+    def read(text: str) -> tuple[Any, list[dict[str, str]]]:
+        messages = [*system_messages, ctx.integ.control_messages(home_data, household, text)[1]]
+        return judge.json(messages, schema, num_predict=160), messages
+
     with JsonlWriter(out) as writer:
         done_labels = {row.get("label") for row in _rows(out)}
-        rejected = holdout_hits = 0
-        for index in range(settings["labels"]):
-            label = None
-            while label is None:  # same plan for the same index on a resumed run
-                label = plan(ctx, home_data, rng)
-            style = ctx.pack.COMMAND_STYLES[index % len(ctx.pack.COMMAND_STYLES)]
-            seed = rng.randrange(1 << 30)  # drawn before skipping: a resumed run plans the same
-            if index in done_labels:
-                continue
-            prompt = ctx.pack.command_prompt(
-                details(ctx, label), settings["sentences_per_label"], style
-            )
-            reply = teacher.json(
-                [{"role": "user", "content": prompt}],
-                list_schema(key),
-                temperature=0.9,
-                num_predict=600,
-                num_ctx=4096,
-                seed=seed,
-            )
-            for text in sentences_of(reply, key):
-                if holdout.match(text):
-                    holdout_hits += 1
-                    continue
-                messages = [
-                    *system_messages,
-                    ctx.integ.control_messages(home_data, household, text)[1],
-                ]
-                parsed = teacher.json(messages, schema, num_predict=160)
-                command = ctx.integ.parse_command(home_data, _dumps(parsed))
-                match = (
-                    ctx.integ.find_target(home_data, command, messages[1]["content"])
-                    if command
-                    else None
-                )
-                device = match.target.name if match and match.target else None
-                if not matches(label, command, device):
-                    rejected += 1
-                    # for review: what was planned and how the teacher read the sentence
-                    log_rejected(
-                        ctx.ws.generated / "control_rejected.jsonl",
-                        {
-                            "kind": label.kind,
-                            "plan": label.fields,
-                            "device": label.device,
-                            "text": text,
-                            "parsed": answer_fields(command) if command else None,
-                            "found": device,
-                        },
-                    )
-                    continue
-                writer.write(
-                    {
-                        "role": "control",
-                        "part": f"control:{label.kind}",
-                        "label": index,
-                        "text": text,
-                        "answer": ctx.integ.control_answer(home_data, answer_fields(command)),
-                        "source": "teacher",
-                    }
-                )
-            progress("control", "control", len(writer.seen), target, rejected + holdout_hits)
+        # the same plans on a resumed run; a manual writer's plans wait for their sentences
+        jobs = [
+            job
+            for job in plans(ctx, home_data)
+            if job[0] not in done_labels and (not manual_writer or job[0] in external)
+        ]
+        for first in range(0, len(jobs), BATCH):
+            batch = jobs[first : first + BATCH]
+            written = in_parallel(write, batch, PARALLEL)
+            pairs = []
+            for job, texts in zip(batch, written, strict=True):
+                for text in texts:
+                    if holdout.match(text):
+                        counts["holdout"] += 1
+                    else:
+                        pairs.append((job, text))
+            readings = in_parallel(lambda pair: read(pair[1]), pairs, PARALLEL)
+            for (job, text), (parsed, messages) in zip(pairs, readings, strict=True):
+                _keep(ctx, writer, home_data, job[0], job[1], text, parsed, messages, counts)
+            progress("control", "control", len(writer.seen), target, sum(counts.values()))
     print(
-        f"control: rejected by the check {rejected}, like a test command {holdout_hits}", flush=True
+        f"control: rejected by the check {counts['rejected']}, like a test command "
+        f"{counts['holdout']}",
+        flush=True,
     )
     return out
+
+
+def _keep(
+    ctx: Context,
+    writer: JsonlWriter,
+    home_data: dict[str, Any],
+    index: int,
+    label: Label,
+    text: str,
+    parsed: Any,
+    messages: list[dict[str, str]],
+    counts: dict[str, int],
+) -> None:
+    """A sentence the teacher read back: kept when it says what was planned."""
+    command = ctx.integ.parse_command(home_data, _dumps(parsed))
+    match = ctx.integ.find_target(home_data, command, messages[1]["content"]) if command else None
+    device = match.target.name if match and match.target else None
+    if not matches(label, command, device, ctx.integ.lang.CHANGE_SET):
+        counts["rejected"] += 1
+        # for review: what was planned and how the teacher read the sentence
+        log_rejected(
+            ctx.ws.generated / "control_rejected.jsonl",
+            {
+                "kind": label.kind,
+                "plan": label.fields,
+                "device": label.device,
+                "text": text,
+                "parsed": answer_fields(command) if command else None,
+                "found": device,
+            },
+        )
+        return
+    writer.write(
+        {
+            "role": "control",
+            "part": f"control:{label.kind}",
+            "label": index,
+            "text": text,
+            "answer": ctx.integ.control_answer(home_data, answer_fields(command)),
+            "source": "teacher",
+        }
+    )
 
 
 def log_rejected(path: Any, row: dict[str, Any]) -> None:

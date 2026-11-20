@@ -40,7 +40,7 @@ fi
 export PATH="$HOME/.local/bin:$PATH"
 
 # the trainer's own dependencies (pyproject.toml: pyyaml + extras data, dev)
-OWN_DEPS=(pyyaml "hassil>=3" home-assistant-intents "aiohttp>=3.9" "pytest>=8" "ruff>=0.6")
+OWN_DEPS=(pyyaml "hassil>=3" home-assistant-intents "aiohttp>=3.9" "anthropic>=2.10" "pytest>=8" "ruff>=0.6")
 
 echo "==> $VENV_DIR (data, export, test, panel)"
 uv venv --python "$PYTHON_VERSION" --allow-existing "$VENV_DIR"

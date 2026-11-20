@@ -50,7 +50,7 @@ def _number(digits: str) -> str | None:
     return rf"\b{digits}\b"
 
 
-def pattern(fact: str) -> str | None:
+def pattern(fact: str, stem: int = STEM, swaps: dict[str, str] | None = None) -> str | None:
     """A regular expression on the lower-cased answer, or None for an unusable fact."""
     fact = " ".join(str(fact).split()).strip(" .,;:!?\"'„”")
     if not fact:
@@ -69,15 +69,13 @@ def pattern(fact: str) -> str | None:
         return _number(digits[0]) if digits else None
     # the longest word carries the meaning („wizyta u dentysty” -> „denty”)
     word = max(words, key=len)
-    return stem_pattern(word[:STEM] if len(word) > STEM else word)
+    return stem_pattern(word[:stem] if len(word) > stem else word, swaps)
 
 
-# inflection swaps some letters: „pokój” / „pokoju”, „wiózł” / „wozić”
-_SWAPS = {"ó": "[óo]", "o": "[oó]", "ą": "[ąę]", "ę": "[ęą]"}
-
-
-def stem_pattern(stem: str) -> str:
-    return "".join(_SWAPS.get(c, re.escape(c)) for c in stem)
+def stem_pattern(stem: str, swaps: dict[str, str] | None = None) -> str:
+    """A word's stem as a pattern; ``swaps`` - letters inflection changes (the language pack's
+    ``INFLECTION_SWAPS``, in Polish „pokój” / „pokoju”: ``{"ó": "[óo]", …}``)."""
+    return "".join((swaps or {}).get(c, re.escape(c)) for c in stem)
 
 
 def required(patterns: list[str]) -> list:
@@ -95,6 +93,8 @@ def to_patterns(
     forbidden: bool = False,
     question: str = "",
     generic: frozenset[str] = frozenset(),
+    stem: int = STEM,
+    swaps: dict[str, str] | None = None,
 ) -> list[str]:
     """Patterns of the facts that are literally in ``source`` (at most ``limit``; facts with
     digits first - they test the most). Left out: raw HA states, facts the question already
@@ -110,8 +110,8 @@ def to_patterns(
             continue
         if YEAR.match(fact.strip(" .,;:!?")):
             continue  # answers usually give a date without the year
-        made = pattern(fact)
-        if not made or made in out or made in {stem_pattern(g) for g in generic}:
+        made = pattern(fact, stem, swaps)
+        if not made or made in out or made in {stem_pattern(g, swaps) for g in generic}:
             continue
         if asked and re.search(made, asked):
             continue

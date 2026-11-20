@@ -27,6 +27,8 @@ zrobić. Nowy błąd, którego tu nie ma? Dopisz go na tę stronę (PL i EN) raz
 | „'…' is still running” / „fetching from Home Assistant is still running” | Działa już inne zadanie; poczekaj albo naciśnij <span class="ui">Stop</span>. |
 | Po restarcie kontenera zadanie jest „Przerwane” | Restart (aktualizacja, `make deploy`) przerywa zadanie. Trening wznów od punktu kontrolnego (<span class="ui">Wznów</span>); generowanie zacznie od miejsca przerwania. |
 | „The studio did not answer within … s - check the machine (make status) and try again.” / „The studio cannot be reached - is the machine on?” (po polsku: „Studio nie odpowiedziało w … s”, „Nie ma połączenia ze studiem”) | Maszyna jest wyłączona albo zajęta, albo kontener się restartuje. `make status` z Maca; strona sama pyta ponownie i komunikat znika, gdy studio odpowie. |
+| Przewodnik nie pokazuje się po otwarciu studia | Pokazuje się raz na przeglądarkę; po Pomiń, Esc albo Gotowe jest zapamiętany. ⚙ → <span class="ui">Przewodnik po studiu</span> pokaże go znowu. W trybie prywatnym przeglądarka nie może tego zapamiętać, więc tam nie startuje sam. |
+| Samouczek niczego nie ramkuje, ekran jest tylko przyciemniony | Jego części nie ma jeszcze na ekranie (wynik przed pierwszym treningiem automatycznym, eksport przed wytrenowanym modelem): samouczek ramkuje najbliższą część; <span class="ui">Dalej</span> idzie dalej. |
 
 ## Home Assistant i kod routera {#faq-ha}
 

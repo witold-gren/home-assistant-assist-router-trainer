@@ -16,7 +16,7 @@ import threading
 import time
 from typing import Any
 
-from .. import ha_client, ha_inputs, power, router_source
+from .. import assist_router_model, auto, ha_client, ha_inputs, power, router_source
 from ..config import (
     REJECTED_MESSAGE,
     REPO,
@@ -143,12 +143,41 @@ class Panel:
 
         def work() -> None:
             try:
-                summary = ha_inputs.fetch(self.ws)
+                summary = ha_inputs.fetch_all(self.ws)
                 self.fetching = {"running": False, "ok": True, "summary": summary}
             except (ha_client.HaError, OSError, ValueError) as err:
                 self.fetching = {"running": False, "ok": False, "error": str(err)}
 
         threading.Thread(target=work, name="ha-fetch", daemon=True).start()
+
+    def handoff_export(self, role: str, per_topic: Any = None) -> dict[str, Any]:
+        """Tasks of a role done by hand, as files for the browser to save (the studio runs on
+        the GPU machine; the person works elsewhere)."""
+        if role not in ("writer", "judge"):
+            raise ValueError("role: writer or judge")
+        args = ["handoff", "export", role]
+        if per_topic:
+            args += ["--per-topic", str(int(per_topic))]
+        result = self.backend().cli_json(*args)
+        folder = Path(result["folder"])
+        result["files"] = {
+            path.name: path.read_text(encoding="utf-8")
+            for path in sorted(folder.iterdir())
+            if path.is_file()
+        }
+        return result
+
+    def handoff_import(self, role: str, text: str) -> dict[str, Any]:
+        """Answers pasted or loaded in the browser."""
+        if role not in ("writer", "judge"):
+            raise ValueError("role: writer or judge")
+        if not text.strip():
+            raise ValueError("no answers")
+        inbox = self.ws.root / "handoff" / "imported"
+        inbox.mkdir(parents=True, exist_ok=True)
+        path = inbox / f"{role}-{time.strftime('%Y%m%d-%H%M%S')}.txt"
+        path.write_text(text, encoding="utf-8")
+        return self.backend().cli_json("handoff", "import", role, str(path))
 
     def router_state(self) -> dict[str, Any]:
         settings = load_settings(self.ws)
@@ -198,11 +227,40 @@ class Panel:
         elif kind in ("export", "evaluate"):
             run = check_name(str(data.get("run", "")), "run")
             args, title = [kind, "--run", run], f"{kind} {run}"
+        elif kind == "auto":
+            dataset = check_name(str(data.get("dataset", "")).strip(), "dataset")
+            models = [check_name(str(m), "model") for m in data.get("models") or []]
+            if not models:
+                raise ValueError("choose at least one model")
+            test = str(data.get("test", auto.TEST_HA))
+            if test not in (auto.TEST_HA, auto.TEST_NEW):
+                raise ValueError(f"unknown test {test!r}")
+            args = ["auto", "--dataset", dataset, "--models", *models, "--test", test]
+            if data.get("router_only"):
+                args += ["--roles", "router"]
+            if not data.get("upload", True):
+                args.append("--no-upload")
+            title = f"auto {dataset}: {', '.join(models)}"
         else:
             raise ValueError(f"unknown job {kind!r}")
         self.backend().start(kind, title, args)
         with self.lock:
             self._polled = 0.0
+
+    def router_model(self, name: str, model: str) -> dict[str, Any]:
+        """Assist Router's router model in Home Assistant: what it is, use a trained one (after
+        the page's confirmation) or put the earlier one back."""
+        client = ha_client.Client(ha_client.load_connection(self.ws), self.ws)
+        try:
+            if name == "use_model":
+                if not model:
+                    raise ValueError("which model?")
+                return assist_router_model.use(client, self.ws, model)
+            if name == "restore_model":
+                return assist_router_model.restore(client, self.ws)
+            return assist_router_model.current(client)
+        except ha_client.HaError as err:
+            raise RuntimeError(str(err)) from None
 
     def stop(self) -> None:
         self.backend().stop()
@@ -472,8 +530,31 @@ class Panel:
         if name == "fetch":
             self.fetch_from_ha()
             return None
+        if name in ("teacher_check", "teacher_keys"):
+            role = str(data.get("role", "writer"))
+            command = {"teacher_check": "check", "teacher_keys": "keys"}[name]
+            return self.backend().cli_json("teacher", command, role)
+        if name == "teacher_key":
+            from .. import teacher as teacher_module
+
+            provider = str(data.get("provider", ""))
+            if provider not in teacher_module.KEY_ENV:
+                raise ValueError("provider: openai or claude")
+            teacher_module.save_key(self.ws.root, provider, str(data.get("key", "")))
+            return {provider: teacher_module.has_key(self.ws.root, provider)}
+        if name == "handoff_export":
+            return self.handoff_export(str(data.get("role", "")), data.get("per_topic"))
+        if name == "handoff_import":
+            return self.handoff_import(str(data.get("role", "")), str(data.get("text", "")))
         if name == "router_fetch":
             return self.fetch_router(data.get("version"))
+        if name == "auto_summary":
+            return {
+                "summary": auto.latest(self.ws),
+                "remembered": assist_router_model.remembered(self.ws),
+            }
+        if name in ("router_model", "use_model", "restore_model"):
+            return self.router_model(name, str(data.get("model", "")))
         if name == "check":
             self.check()
         elif name == "start":

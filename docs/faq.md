@@ -27,6 +27,8 @@ A new error that is not here? Add it to this page (PL and EN) with its fix.
 | "'…' is still running" / "fetching from Home Assistant is still running" | Another job is running; wait or press <span class="ui">Stop</span>. |
 | After a container restart the job says "Interrupted" | A restart (update, `make deploy`) stops the job. Resume training from its checkpoint (<span class="ui">Resume</span>); generating starts where it ended. |
 | "The studio did not answer within … s - check the machine (make status) and try again." / "The studio cannot be reached - is the machine on?" | The machine is off or busy, or the container is restarting. `make status` from the Mac; the page asks again by itself and the message goes once the studio answers. |
+| The tour does not show when the studio opens | It shows once per browser; after Skip, Esc or Done it is remembered. ⚙ → <span class="ui">Tour of the studio</span> shows it again. In private browsing the browser cannot remember it, so it does not start by itself there. |
+| A lesson frames nothing, only the screen is dimmed | Its part is not on the screen yet (a result before the first automatic training, the export before a trained model): the lesson frames the nearest part instead; <span class="ui">Next</span> goes on. |
 
 ## Home Assistant and the router code {#faq-ha}
 

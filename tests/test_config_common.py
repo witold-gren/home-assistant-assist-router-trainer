@@ -103,3 +103,14 @@ def test_teacher_reply_sentences() -> None:
     assert sentences_of(None, "zdania") == []
     assert strip_speaker("Mama: co jest na obiad?") == "co jest na obiad?"
     assert json.dumps(list_schema("x"))
+
+
+def test_accents_and_speakers_of_any_latin_language() -> None:
+    from router_trainer.holdout import normalize, strip_accents
+
+    assert strip_accents("Zażółć gęślą jaźń") == "Zazolc gesla jazn"
+    assert strip_accents("Příliš žluťoučký kůň") == "Prilis zlutoucky kun"
+    assert normalize("Øl, DOBRÝ den!") == "ol dobry den"
+    assert strip_speaker("Ťapka: rozsviť světlo") == "rozsviť světlo"
+    assert strip_speaker("Mum: turn on the light") == "turn on the light"
+    assert strip_speaker("ok: turn on") == "ok: turn on"  # not a name

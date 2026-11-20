@@ -44,3 +44,27 @@ Ctrl/⌘+Z, Ctrl/⌘+Shift+Z.
 
 ![Model settings](assets/screens/en/studio-settings.png)
 ![Saving: one changed line](assets/screens/en/studio-save.png)
+
+## The tour and the lessons {#tour}
+
+The first time the studio opens in a browser, the **tour** goes through the parts of the screen: one part framed,
+the rest dimmed, a bubble saying what it is and where it is set (the tree, the middle, the right column, the
+machine and the job, the draft, YAML, help). Esc or <span class="ui">Skip</span> ends it; ⚙ →
+<span class="ui">Tour of the studio</span> shows it again.
+
+![The tour: the tree framed](assets/screens/en/studio-tour.png)
+
+⚙ → <span class="ui">Lessons</span> lists every task of the trainer as a short lesson that **goes where the task is
+done** and frames one thing at a time. A step that waits for the framed button moves on when you click it, so the
+task is done while you learn it (<span class="ui">Next</span> works too). Done lessons get a ✓ in this browser; a
+lesson that needs something the workspace has not got yet (a test, a dataset, a trained model) says what. The ? of a
+card offers the lesson of its place: <span class="ui">Show me step by step</span>.
+
+![The lessons](assets/screens/en/studio-lessons.png)
+![A lesson: automatic training, the test](assets/screens/en/studio-lesson.png)
+
+| Group | Lessons |
+|---|---|
+| The start | Connect Home Assistant · Fetch from Home Assistant · Automatic training · Read the result and use it · Watch the training |
+| Further steps | Choose and review the test · Generate the data · The dataset · Train one model · Resume a stopped run · Export and compare · Try a sentence · The job history |
+| Set up once | Choose the teacher · The teacher by hand · Change and save settings · The whole file · The machine's power · Look and language |

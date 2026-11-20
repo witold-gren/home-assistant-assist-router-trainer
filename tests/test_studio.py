@@ -334,17 +334,64 @@ def test_machine_goes_off_after_a_job_unless_cancelled_or_stopped(tmp_path, monk
 # --- the page: texts, icons, files --------------------------------------------------------------------------
 
 
-def _strings(language: str) -> set[str]:
-    text = (WWW / "i18n.js").read_text(encoding="utf-8")
+def _strings(language: str, name: str = "i18n.js") -> set[str]:
+    text = (WWW / name).read_text(encoding="utf-8")
     block = text[text.index(f"  {language}: {{") :]
     block = block[: block.index("\n  },")]
     return set(re.findall(r"^\s{4}([a-z0-9_]+):", block, re.M))
 
 
+def _keys(name: str, pattern: str) -> list[str]:
+    return re.findall(pattern, (WWW / name).read_text(encoding="utf-8"))
+
+
+def test_the_tour_and_every_lesson_have_their_texts_in_both_languages() -> None:
+    en, pl = _strings("en", "tour-texts.js"), _strings("pl", "tour-texts.js")
+    assert en == pl
+    assert not en & _strings("en")  # one place for each text
+    tour = re.search(
+        r"TOUR_STEPS = \[(.+?)\n\];", (WWW / "tour.js").read_text(encoding="utf-8"), re.S
+    )[1]
+    needed = set()
+    for line in tour.splitlines():
+        if key := re.search(r'key: "([a-z_]+)"', line):
+            needed |= {f"studio_tour_{key[1]}_title", f"studio_tour_{key[1]}_text"}
+            if "where: true" in line:
+                needed.add(f"studio_tour_{key[1]}_where")
+    source = (WWW / "lessons.js").read_text(encoding="utf-8")
+    lessons = re.split(r'\n  \{\n    key: "', source.split("export const LESSONS = [", 1)[1])[1:]
+    assert len(lessons) >= 17
+    grouped = re.findall(
+        r'"([a-z_]+)"', source.split("export const GROUPS = [", 1)[1].split("];", 1)[0]
+    )
+    names = [lesson.split('"', 1)[0] for lesson in lessons]
+    assert sorted(k for k in grouped if not k.startswith("lessons_")) == sorted(
+        names
+    )  # each lesson in one group
+    for lesson in lessons:
+        name = lesson.split('"', 1)[0]
+        needed |= {f"lesson_{name}_name", f"lesson_{name}_about"}
+        for step in re.findall(r'\{ key: "([a-z_]+)", targets', lesson):
+            needed |= {f"lesson_{name}_{step}_title", f"lesson_{name}_{step}_text"}
+        if needs := re.search(r'needs: "([a-z_]+)"', lesson):
+            needed.add(f"lessons_needs_{needs[1]}")
+    assert sorted(needed - en) == []
+    assert (
+        sorted(
+            k
+            for k in en - needed
+            if k.startswith("lesson_")
+            and k.count("_") > 2
+            and k not in {"lesson_step", "lesson_try", "lesson_show"}
+        )
+        == []
+    )  # no text left over
+
+
 def test_every_text_of_the_page_exists_in_both_languages() -> None:
     en, pl = _strings("en"), _strings("pl")
     assert en == pl
-    known = en | set(TEXTS["en"])
+    known = en | set(TEXTS["en"]) | _strings("en", "tour-texts.js")
     used = set()
     for file in [WWW / "app.js", WWW / "outline.js", *(WWW / "views").glob("*.js")]:
         source = file.read_text(encoding="utf-8")

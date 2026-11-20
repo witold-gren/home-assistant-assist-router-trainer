@@ -10,7 +10,7 @@ import random
 from types import ModuleType
 from typing import Any
 
-from . import holdout as holdout_module, integration, languages
+from . import holdout as holdout_module, integration, languages, teacher as teacher_module
 from .config import (
     REJECTED_MESSAGE,
     Workspace,
@@ -19,7 +19,6 @@ from .config import (
     token_path,
     token_rejected,
 )
-from .teacher import Teacher, start_local
 
 
 @dataclass
@@ -29,7 +28,7 @@ class Context:
     integ: integration.Integration
     config: Any  # RouterConfig of the integration
     pack: ModuleType  # trainer language pack
-    _teacher: Teacher | None = field(default=None, repr=False)
+    _teachers: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def input(self, name: str) -> Path:
         return self.ws.path(self.settings["inputs"][name])
@@ -60,12 +59,12 @@ class Context:
     def rng(self, salt: str) -> random.Random:
         return random.Random(f"{self.settings['generate']['seed']}:{salt}")
 
-    def teacher(self) -> Teacher:
-        if self._teacher is None:
-            url = start_local(self.settings, self.ws.root)
-            self._teacher = Teacher(url, self.settings["ollama"]["teacher"])
-            self._teacher.ensure()
-        return self._teacher
+    def teacher(self, role: str = "writer") -> Any:
+        """The teacher of a role: ``writer`` writes the data, ``judge`` checks and labels it
+        (trainer.yaml ``teacher.<role>``: the trainer's Ollama, an API, Claude or by hand)."""
+        if role not in self._teachers:
+            self._teachers[role] = teacher_module.make(self.settings, self.ws.root, role)
+        return self._teachers[role]
 
     def token(self) -> str:
         if token_rejected(self.ws):  # each 401 is a failed login for HA's ip_ban
@@ -84,5 +83,20 @@ def make(ws: Workspace) -> Context:
     router_file = ws.path(settings["inputs"]["router"])
     if not router_file.exists():
         raise FileNotFoundError(f"{router_file} missing - send the inputs first (Send step)")
+    use_home_language(ws)  # as the integration in HA; `language:` of router.yaml still wins
     config = integ.load_config(router_file)
     return Context(ws, settings, integ, config, languages.get(integ.lang.CODE))
+
+
+def use_home_language(ws: Workspace) -> bool:
+    """The language pack of Home Assistant's language (from the last fetch), as Assist Router
+    does at setup - when there is a pack for it."""
+    from importlib import import_module
+
+    from . import ha_inputs
+
+    language = (ha_inputs.last(ws) or {}).get("language")
+    if not language:
+        return False
+    packs = import_module("custom_components.assist_router.languages")
+    return bool(packs.set_language(str(language)))

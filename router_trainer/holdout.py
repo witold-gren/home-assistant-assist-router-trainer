@@ -20,10 +20,19 @@ import unicodedata
 STEM = 5  # crude stemming for an inflected language: the first letters of a word
 
 
+# letters with a stroke that Unicode does not split into a letter and an accent
+_STROKES = str.maketrans("łŁøØđĐħĦ", "lLoOdDhH")
+
+
+def strip_accents(text: str) -> str:
+    """„Zażółć” -> „Zazolc”, „Příliš” -> „Prilis” - for any language with Latin letters."""
+    text = unicodedata.normalize("NFKD", str(text).translate(_STROKES))
+    return unicodedata.normalize("NFC", "".join(c for c in text if not unicodedata.combining(c)))
+
+
 def normalize(text: str) -> str:
-    """Lower case, no accents (also ł), no punctuation, single spaces."""
-    text = unicodedata.normalize("NFKD", str(text).lower().replace("ł", "l"))
-    text = "".join(c for c in text if not unicodedata.combining(c))
+    """Lower case, no accents, no punctuation, single spaces."""
+    text = strip_accents(str(text).lower())
     return " ".join(re.sub(r"[^\w\s]", " ", text).split())
 
 

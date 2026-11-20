@@ -122,6 +122,9 @@ CARDS = {
         "power": "Przełącznik komputera w Home Assistancie i czujnik mocy gniazdka. Wyłączenie"
         " nigdy nie przerywa trwającego zadania.",
         "machine": "Sprawdzenie kontenera: karta, sterownik, środowiska i Ollama studia.",
+        "auto": "Cała droga jednym zadaniem: dane z Home Assistanta, test, zbiór, trening, eksport"
+        " i porównanie z obecnym modelem routera. Model trafia do Assist Routera dopiero po"
+        " kliknięciu Użyj i potwierdzeniu.",
     },
     "en": {
         "inputs": "Files from Home Assistant through the API (an administrator's token, read only)."
@@ -151,6 +154,9 @@ CARDS = {
         " never interrupts a running job.",
         "machine": "A check of the container: the card, the driver, the environments and the"
         " studio's Ollama.",
+        "auto": "The whole road as one job: data from Home Assistant, the test, the dataset,"
+        " training, export and the comparison with the current router model. A model goes to"
+        " Assist Router only after Use and a confirmation.",
     },
 }
 
@@ -172,6 +178,7 @@ LINKS = {
     "settings": "good-practice/#parameters",
     "power": "home-assistant/#power",
     "machine": "faq/#faq-docker",
+    "auto": "steps/#auto",
 }
 
 

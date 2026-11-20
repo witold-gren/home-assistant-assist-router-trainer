@@ -176,7 +176,7 @@ export async function call(type, data = {}, { timeout = callTimeout() } = {}) {
 /** An action of the training panel (start a job, fetch from HA, review a case …); its result, or null on error. */
 // actions the server answers only when done (its own limits: git clone 300 s, a sentence for the models
 // 900 s); every other action starts a job and answers at once
-const LONG_ACTIONS = { router_fetch: 320000, try: 920000 };
+const LONG_ACTIONS = { router_fetch: 320000, try: 920000, teacher_check: 120000, handoff_export: 120000, handoff_import: 120000 };
 
 export async function action(name, extra = {}, button = null) {
   if (button) button.classList.add("busy");
@@ -235,7 +235,7 @@ export function card(title, helpKey, ...children) {
   const button = help ? el("button", { type: "button", class: "help-btn", title: t("help"), "aria-label": t("help"),
     "aria-haspopup": "dialog", "data-help": helpKey, onclick: (event) => {
       event.stopPropagation();
-      toggleHelp(event.currentTarget, title, help, state?.help?.links?.[helpKey]);
+      toggleHelp(event.currentTarget, title, help, state?.help?.links?.[helpKey], helpKey);
     } }, "?") : null;
   return el("section", { class: "card view-card" }, el("div", { class: "card-head" }, el("h2", {}, title), button), ...children);
 }
@@ -255,17 +255,21 @@ export function closeHelp() {
   helpPopup = null;
 }
 
-function toggleHelp(anchor, title, text, page) {
+function toggleHelp(anchor, title, text, page, helpKey = null) {
   const again = helpPopup?.anchor === anchor;
   closeHelp();
   if (again) return;
+  const lesson = helpKey ? hooks.lessonFor?.(helpKey) : null;
   const node = el("div", { class: "help-pop", role: "dialog", "aria-label": title, "data-help-pop": "" },
     el("div", { class: "help-pop-head" }, el("strong", {}, title),
       el("button", { type: "button", class: "ghost help-pop-close", "aria-label": t("close"), "data-help-close": "",
         onclick: closeHelp }, "✕")),
     el("p", {}, text),
     page ? el("a", { class: "guide-link", "data-guide-link": page, target: "_blank", rel: "noopener",
-      href: `/docs/${state.language === "pl" ? "pl" : "en"}/${page}` }, `${t("guide_more")} →`) : null);
+      href: `/docs/${state.language === "pl" ? "pl" : "en"}/${page}` }, `${t("guide_more")} →`) : null,
+    // the lesson of this place (gpu-studio.md section 5a): the task shown step by step where it is done
+    lesson ? el("button", { type: "button", class: "btn small help-lesson", "data-help-lesson": lesson,
+      onclick: () => { closeHelp(); hooks.startLesson?.(lesson); } }, `${t("lesson_show")} →`) : null);
   document.body.append(node);
   const box = anchor.getBoundingClientRect();
   const width = node.offsetWidth;

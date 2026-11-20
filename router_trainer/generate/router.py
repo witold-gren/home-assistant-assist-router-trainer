@@ -5,11 +5,15 @@ Sources (each row keeps its source, so the dataset card shows the mix):
   the topic's reference sentence (``command`` in router.yaml) or ``topic_overrides``;
 - ``intent``: built-in HA intents (home-assistant-intents) with your entity, area and floor
   names - commands go to the control topic, weather etc. by ``intent_topics``;
+- ``custom``: your own ``custom_sentences`` of Home Assistant, the same way (an intent of your
+  own ``intent_script`` gets the topic the teacher picks, or ``topic_overrides`` ``intent:<name>``);
 - ``paraphrase``: natural questions the teacher writes per topic, in several styles;
 - ``knowledge``: questions about random encyclopedia titles (topic with ``search``);
 - ``chat`` and ``gibberish``: small talk and speech recognition noise (fallback / unclear topic);
 - ``log``: real questions from unrecognized_commands.csv that are unlike every test question,
-  labelled by the teacher with the integration's own router prompt.
+  labelled by the teacher with the integration's own router prompt;
+- ``recording`` and ``asr``: the home's own voice commands and natural questions read aloud,
+  both written by the home's Whisper (``speech.py``).
 
 Test sentences are dropped on the way (exact and near duplicates).
 """
@@ -31,6 +35,7 @@ import yaml
 
 from ..context import Context
 from ..holdout import Holdout, normalize
+from ..teacher import is_manual
 from .common import JsonlWriter, list_schema, progress, sample, sentences_of, stage
 
 PARAPHRASE_BATCH = 25
@@ -131,7 +136,10 @@ def canonical_commands(ctx: Context) -> dict[str, set[str]]:
 
 
 def map_triggers(
-    triggers: list[dict[str, Any]], commands: dict[str, set[str]], overrides: dict[str, str]
+    triggers: list[dict[str, Any]],
+    commands: dict[str, set[str]],
+    overrides: dict[str, str],
+    language: str = "pl",
 ) -> dict[str, str]:
     """Trigger key -> topic: matches a reference sentence, or an override from trainer.yaml."""
     from hassil import Intents, recognize
@@ -151,7 +159,7 @@ def map_triggers(
         try:
             intents = Intents.from_dict(
                 {
-                    "language": "pl",
+                    "language": language,
                     "intents": {"t": {"data": [{"sentences": trigger["templates"]}]}},
                 }
             )
@@ -231,6 +239,7 @@ def trigger_sentences(
     rng: random.Random,
     classify: Callable[[list[str]], str | None] | None = None,
     propose: Callable[[str, list[str]], list[str]] | None = None,
+    skip_unknown: bool = False,
 ) -> list[tuple]:
     """Sentences of every trigger with its topic. A trigger without a matching reference
     sentence or override gets the topic ``classify`` picks for a few of its sentences (the
@@ -243,7 +252,10 @@ def trigger_sentences(
 
     triggers = conversation_triggers(ctx.input("ha_config"))
     mapping = map_triggers(
-        triggers, canonical_commands(ctx), ctx.settings.get("topic_overrides") or {}
+        triggers,
+        canonical_commands(ctx),
+        ctx.settings.get("topic_overrides") or {},
+        ctx.integ.lang.CODE,
     )
     fallback = ctx.settings["fallback_topic"]
     devices, areas, _ = home_names(home_data)
@@ -276,6 +288,10 @@ def trigger_sentences(
         elif topic is None and classify is not None and texts:
             topic, how = classify(texts[:5]), "teacher"
             cache[trigger["key"]] = {"alias": trigger["alias"], "topic": topic, "sample": texts[:3]}
+        if topic is None and skip_unknown:  # judged by hand: no guessing - set topic_overrides
+            print(f"  {'-':20} skipped   {trigger['key']:36} {trigger['alias'][:50]} "
+                  "(no topic: topic_overrides)", flush=True)  # fmt: skip
+            continue
         if topic is None:
             topic, how = fallback, "fallback"
         print(f"  {topic:20} {how:9} {trigger['key']:36} {trigger['alias'][:50]}", flush=True)
@@ -287,6 +303,39 @@ def trigger_sentences(
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"sentence triggers: {len(triggers)}, by reference sentence or override: {len(mapping)}")
+    return out
+
+
+def trigger_report(ctx: Context) -> list[dict[str, Any]]:
+    """Every sentence trigger with the topic its sentences get and how (``override`` of
+    trainer.yaml, ``reference`` sentence of router.yaml, the ``teacher``'s earlier choice, or
+    ``none`` yet) - the list to write ``topic_overrides`` from for a new home."""
+    triggers = conversation_triggers(ctx.input("ha_config"))
+    overrides = ctx.settings.get("topic_overrides") or {}
+    mapping = map_triggers(triggers, canonical_commands(ctx), {}, ctx.integ.lang.CODE)
+    cache_file = ctx.ws.generated / "trigger_topics.json"
+    cache = json.loads(cache_file.read_text(encoding="utf-8")) if cache_file.exists() else {}
+    out = []
+    for trigger in triggers:
+        override = overrides.get(trigger["key"]) or overrides.get(trigger["id"])
+        if override:
+            topic, how = override, "override"
+        elif trigger["key"] in mapping:
+            topic, how = mapping[trigger["key"]], "reference"
+        elif trigger["key"] in cache:
+            topic, how = cache[trigger["key"]]["topic"], "teacher"
+        else:
+            topic, how = None, "none"
+        out.append(
+            {
+                "key": trigger["key"],
+                "alias": trigger["alias"],
+                "topic": topic,
+                "how": how,
+                "known_topic": topic in ctx.config.topics,
+                "templates": trigger["templates"][:3],
+            }
+        )
     return out
 
 
@@ -324,7 +373,7 @@ def auto_slot_values(
 
 def teacher_slot_values(ctx: Context, home_data: dict[str, Any]) -> Callable:
     """The teacher's values for one wildcard of your sentence triggers."""
-    teacher = ctx.teacher()
+    teacher = ctx.teacher("writer")
     key = ctx.pack.VALUES_KEY
     devices, _, _ = home_names(home_data)
     rooms = ", ".join(sorted(set(home_data["areas"].values())))
@@ -343,7 +392,7 @@ def teacher_slot_values(ctx: Context, home_data: dict[str, Any]) -> Callable:
 
 def teacher_classifier(ctx: Context) -> Callable[[list[str]], str | None]:
     """The teacher's topic for a few sentences of one trigger (majority of its answers)."""
-    teacher = ctx.teacher()
+    teacher = ctx.teacher("judge")
     schema = ctx.integ.router_schema(ctx.config)
 
     def classify(texts: list[str]) -> str | None:
@@ -406,6 +455,84 @@ def native_sentences(ctx: Context, home_data: dict[str, Any], rng: random.Random
 # --- gibberish and chat -----------------------------------------------------------------------
 
 
+def custom_sentences(
+    ctx: Context,
+    home_data: dict[str, Any],
+    rng: random.Random,
+    classify: Callable[[list[str]], str | None] | None = None,
+) -> list[tuple]:
+    """Sentences of Home Assistant's own ``custom_sentences/<language>/*.yaml`` (fetched with the
+    export). An intent of HA's command list goes to the control topic; one in ``intent_topics``
+    or ``topic_overrides`` (``intent:<name>``) to that topic; any other (an ``intent_script`` of
+    the home) gets the topic the teacher picks for a few of its sentences, saved with the
+    trigger topics (generated/trigger_topics.json) for review."""
+    from hassil import Intents, parse_sentence
+    from hassil.intents import TextSlotList, WildcardSlotList
+
+    folder = ctx.input("ha_config") / "custom_sentences" / ctx.integ.lang.CODE
+    files = sorted(folder.glob("*.yaml")) if folder.is_dir() else []
+    if not files:
+        return []
+    data: dict[str, Any] = {"language": ctx.integ.lang.CODE, "intents": {}}
+    for file in files:
+        try:
+            Intents.from_dict(load_ha_yaml(file.read_text(encoding="utf-8")) or {})
+        except Exception as err:  # a file hassil cannot read is skipped, the others stay
+            print(f"  ! custom sentences {file.name} skipped: {err}", flush=True)
+            continue
+        part = load_ha_yaml(file.read_text(encoding="utf-8")) or {}
+        for name, intent in (part.get("intents") or {}).items():
+            data["intents"].setdefault(name, {"data": []})["data"] += intent.get("data") or []
+        for key in ("lists", "expansion_rules"):
+            data.setdefault(key, {}).update(part.get(key) or {})
+    intents = Intents.from_dict(data)
+    devices, areas, floors = home_names(home_data)
+    lists: dict[str, Any] = {}
+    for name, slot_list in intents.slot_lists.items():
+        own = (ctx.settings.get("slot_values") or {}).get(name)
+        if own:
+            lists[name] = list(own)
+        elif isinstance(slot_list, WildcardSlotList):
+            lists[name] = areas + devices[:200]
+        else:
+            lists[name] = slot_list
+    for name, values in (("name", devices), ("area", areas), ("floor", floors)):
+        if values and name not in lists:
+            lists[name] = TextSlotList.from_strings(values)
+    expander = Expander(lists, intents.expansion_rules, rng)
+    per_template = ctx.settings["generate"]["router"]["per_template"]
+    control_topic = next((t.name for t in ctx.config.topics.values() if t.control), None)
+    intent_topics = ctx.settings.get("intent_topics") or {}
+    overrides = ctx.settings.get("topic_overrides") or {}
+    cache_file = ctx.ws.generated / "trigger_topics.json"
+    cache = json.loads(cache_file.read_text(encoding="utf-8")) if cache_file.exists() else {}
+    out = []
+    for name, intent in intents.intents.items():
+        texts = []
+        for block in intent.data:
+            for template in block.sentences:
+                sentence = parse_sentence(template) if isinstance(template, str) else template
+                texts += [expander.text(sentence) for _ in range(per_template)]
+        texts = [t for t in dict.fromkeys(texts) if t]
+        key = f"intent:{name}"
+        topic = overrides.get(key) or intent_topics.get(name)
+        if topic is None and name in ctx.integ.lang.INTENTS:
+            topic = control_topic
+        if topic is None and key in cache:
+            topic = cache[key]["topic"]
+        elif topic is None and classify is not None and texts:
+            topic = classify(texts[:5])
+            cache[key] = {"alias": name, "topic": topic, "sample": texts[:3]}
+        topic = topic or ctx.settings["fallback_topic"]
+        print(f"  {topic:20} custom    {name}", flush=True)
+        if topic in ctx.config.topics:
+            out += [(text, topic, "custom") for text in texts]
+    if cache:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+    return out
+
+
 def gibberish(ctx: Context, rng: random.Random, count: int) -> list[str]:
     pack = ctx.pack
     out = []
@@ -446,12 +573,18 @@ def topic_hint(ctx: Context, topic: Any, home_data: dict[str, Any], rng: random.
 
 
 def paraphrases(
-    ctx: Context, writer: JsonlWriter, holdout: Holdout, home_data: dict[str, Any]
+    ctx: Context,
+    writer: JsonlWriter,
+    holdout: Holdout,
+    home_data: dict[str, Any],
+    checker: Any = None,
 ) -> None:
+    """Teacher sentences per topic; with a ``checker`` (labels.Checker) only the ones the
+    teacher, asked with the router's own prompt, puts in the same topic."""
     settings = ctx.settings["generate"]["router"]
     target = settings["paraphrases_per_topic"]
     rng = ctx.rng("paraphrase")
-    teacher = ctx.teacher()
+    teacher = ctx.teacher("writer")
     key = ctx.pack.SENTENCES_KEY
     schema = list_schema(key)
     for topic in ctx.config.topics.values():
@@ -474,11 +607,13 @@ def paraphrases(
                 schema,
                 temperature=1.0,
                 num_predict=1500,
-                num_ctx=4096,
                 seed=rng.randrange(1 << 30),
             )
-            for text in sentences_of(reply, key):
-                if holdout.match(text):
+            texts = [t for t in sentences_of(reply, key) if (part, normalize(t)) not in writer.seen]
+            if checker is not None:
+                checker.ask([t for t in texts if not holdout.match(t)])
+            for text in texts:
+                if holdout.match(text) or (checker and not checker.agrees(text, topic.name)):
                     rejected += 1
                     continue
                 writer.write(
@@ -493,8 +628,8 @@ def paraphrases(
             progress("router", part, writer.count(part), target, rejected)
 
 
-def wikipedia_titles(cache: Path, count: int, exclude: set[str]) -> list[str]:
-    """Random titles of the Polish Wikipedia (cached); test phrases are left out."""
+def wikipedia_titles(cache: Path, count: int, exclude: set[str], language: str = "pl") -> list[str]:
+    """Random titles of the Wikipedia of ``language`` (cached); test phrases are left out."""
     titles: list[str] = json.loads(cache.read_text()) if cache.exists() else []
     while len(titles) < count:
         params = {
@@ -505,7 +640,7 @@ def wikipedia_titles(cache: Path, count: int, exclude: set[str]) -> list[str]:
             "rnlimit": "500",
         }
         request = urllib.request.Request(
-            "https://pl.wikipedia.org/w/api.php?" + urllib.parse.urlencode(params),
+            f"https://{language}.wikipedia.org/w/api.php?" + urllib.parse.urlencode(params),
             headers={"User-Agent": USER_AGENT},
         )
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -524,7 +659,7 @@ def knowledge(ctx: Context, writer: JsonlWriter, holdout: Holdout, titles: list[
         return
     target = ctx.settings["generate"]["router"]["knowledge"]
     part = "knowledge"
-    teacher = ctx.teacher()
+    teacher = ctx.teacher("writer")
     key = ctx.pack.QUESTIONS_KEY
     rejected = 0
     for start in range(0, len(titles), KNOWLEDGE_BATCH):
@@ -536,7 +671,6 @@ def knowledge(ctx: Context, writer: JsonlWriter, holdout: Holdout, titles: list[
             list_schema(key),
             temperature=0.7,
             num_predict=1500,
-            num_ctx=4096,
         )
         for text in sentences_of(reply, key):
             if holdout.match(text):
@@ -569,18 +703,18 @@ def log_questions(ctx: Context, writer: JsonlWriter, holdout: Holdout) -> None:
     kept, rejected = holdout.split(texts)
     part = "log"
     print(f"log: {len(texts)} distinct questions, {len(rejected)} like a test question", flush=True)
-    teacher = ctx.teacher()
-    schema = ctx.integ.router_schema(ctx.config)
-    for text in kept:
-        if (part, normalize(text)) in writer.seen:
-            continue
-        reply = teacher.json(ctx.integ.router_messages(ctx.config, text), schema, num_predict=30)
-        topic = (reply or {}).get(ctx.integ.lang.TOPIC_KEY)
+    from .labels import Checker
+
+    checker = Checker(ctx)  # the judge's topics, kept in generated/labels.json
+    todo = [text for text in kept if (part, normalize(text)) not in writer.seen]
+    checker.ask(todo)
+    for text in todo:
+        topic = checker.topic(text)
         if topic in ctx.config.topics:
             writer.write(
                 {"role": "router", "part": part, "text": text, "topic": topic, "source": "log"}
             )
-        progress("router", part, writer.count(part), len(kept), len(rejected))
+    progress("router", part, writer.count(part), len(kept), len(rejected))
 
 
 def generate(ctx: Context) -> Path:
@@ -590,15 +724,24 @@ def generate(ctx: Context) -> Path:
     holdout = ctx.holdout()
     home_data = ctx.home_data()
     out = ctx.ws.generated / "router.jsonl"
+    from . import labels
+
+    checker = labels.Checker(ctx) if labels.checked_sources(ctx) else None
+    if checker is not None:  # teacher sentences router.yaml puts elsewhere go (refilled below)
+        labels.clean(ctx, checker)
     with JsonlWriter(out) as writer:
         rng = ctx.rng("templates")
         fixed: list[tuple] = []
+        manual_writer = is_manual(ctx.settings, "writer")
+        manual_judge = is_manual(ctx.settings, "judge")
+        classify = None if manual_judge else teacher_classifier(ctx)
         if writer.count("trigger") == 0:
-            fixed += trigger_sentences(
-                ctx, home_data, rng, teacher_classifier(ctx), teacher_slot_values(ctx, home_data)
-            )
+            propose = None if manual_writer else teacher_slot_values(ctx, home_data)
+            fixed += trigger_sentences(ctx, home_data, rng, classify, propose, manual_judge)
         if writer.count("intent") == 0:
             fixed += native_sentences(ctx, home_data, rng)
+        if writer.count("custom") == 0:
+            fixed += custom_sentences(ctx, home_data, rng, classify)
         fallback = ctx.settings["fallback_topic"]
         if writer.count("chat") == 0 and fallback in ctx.config.topics:
             fixed += [(text, fallback, "chat") for text in ctx.pack.CHAT]
@@ -619,12 +762,30 @@ def generate(ctx: Context) -> Path:
             )
         progress("router", "templates", len(writer.seen), len(writer.seen), rejected)
 
-        paraphrases(ctx, writer, holdout, home_data)
-        exclude = {normalize(p) for p in (ctx.tests().get("wiki") or {}).values()}
-        titles = wikipedia_titles(
-            ctx.ws.generated / "wiki_titles.json", settings["knowledge"] * 2, exclude
-        )
-        knowledge(ctx, writer, holdout, titles)
+        if manual_writer:  # the writer works by hand: its sentences come with the handoff
+            print("writer: manual - paraphrases, contrast pairs and knowledge questions come "
+                  "from router-trainer handoff export/import writer", flush=True)  # fmt: skip
+        else:
+            paraphrases(ctx, writer, holdout, home_data, checker)
+            if checker is not None:  # sentences on both sides of the borders that get mixed up
+                labels.contrast(ctx, writer, holdout, checker, home_data)
+            exclude = {normalize(p) for p in (ctx.tests().get("wiki") or {}).values()}
+            titles = wikipedia_titles(
+                ctx.ws.generated / "wiki_titles.json",
+                settings["knowledge"] * 2,
+                exclude,
+                ctx.config.wikipedia_language,
+            )
+            knowledge(ctx, writer, holdout, titles)
         if settings["log_questions"]:
             log_questions(ctx, writer, holdout)
+        # real speech: the home's own recordings, then natural questions through Piper and
+        # Whisper (the errors speech recognition really makes)
+        from . import speech
+
+        try:
+            speech.recordings(ctx, writer, holdout)
+            speech.asr_noise(ctx, writer, holdout)
+        except OSError as err:  # the home server is off or Piper/Whisper are not there
+            print(f"!! speech sources skipped - {err}", flush=True)
     return out

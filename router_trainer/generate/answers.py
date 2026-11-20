@@ -24,8 +24,16 @@ from .router import wikipedia_titles
 
 ANSWER_TOKENS = 160  # as conversation.py
 SUMMARY_TOKENS_PER_SENTENCE = 70
-# HA states that must be put into words (not "on"/"off": „on” is a Polish pronoun)
-RAW_STATES = re.compile(r"\b(unavailable|unknown|null|true|false)\b")
+# HA states that must be put into words; a language pack leaves out its own words
+# (``NOT_RAW_STATES``: in Polish „on” is a pronoun)
+STATE_WORDS = ("on", "off", "unavailable", "unknown", "null", "true", "false")
+
+
+def raw_states(own_words: tuple[str, ...] = ()) -> re.Pattern[str]:
+    words = [w for w in STATE_WORDS if w not in own_words]
+    return re.compile(rf"\b({'|'.join(words)})\b")
+
+
 MARKUP = re.compile(r"(\*\*|^#|\n\s*[-*•]\s|<\||\[\d+\]|https?://)")
 WIKI_BATCH = 10
 
@@ -34,14 +42,16 @@ def sentence_count(text: str) -> int:
     return len([s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s])
 
 
-def form_problems(answer: str, min_sentences: int, max_sentences: int) -> list[str]:
+def form_problems(
+    answer: str, min_sentences: int, max_sentences: int, own_words: tuple[str, ...] = ("on", "off")
+) -> list[str]:
     """What makes an answer unfit to be read aloud."""
     problems = []
     if not answer.strip():
         return ["empty"]
     if MARKUP.search(answer):
         problems.append("markup")
-    if RAW_STATES.search(answer.lower()):
+    if raw_states(own_words).search(answer.lower()):
         problems.append("raw state")
     count = sentence_count(answer)
     if count > max_sentences:
@@ -65,7 +75,7 @@ def given(ctx: Context, writer: JsonlWriter) -> None:
     target = ctx.settings["generate"]["answers"]["given"]
     rng = ctx.rng("given")
     names = [person.name for person in ctx.config.people.values()]
-    teacher = ctx.teacher()
+    teacher = ctx.teacher("writer")
     holdout = ctx.holdout()
     rejected = 0
     for index in range(target * 2):  # some answers fail the check
@@ -84,7 +94,9 @@ def given(ctx: Context, writer: JsonlWriter) -> None:
         )
         answer = teacher.text(messages, temperature=0.2, num_predict=ANSWER_TOKENS)
         case = {"must": scenario["must"], "never": scenario["never"]}
-        problems = ctx.integ.benchmark.check(answer, case, 1, 3) + form_problems(answer, 1, 3)
+        problems = ctx.integ.benchmark.check(answer, case, 1, 3) + form_problems(
+            answer, 1, 3, ctx.pack.NOT_RAW_STATES
+        )
         if problems:
             rejected += 1
         else:
@@ -128,7 +140,7 @@ def live(ctx: Context, writer: JsonlWriter) -> None:
     now = datetime.now(ZoneInfo(ha_settings["time_zone"])).replace(second=0, microsecond=0)
     speakers = [p.speaker for p in ctx.config.people.values() if p.speaker]
     rng = ctx.rng("live")
-    teacher = ctx.teacher()
+    teacher = ctx.teacher("writer")
     topics = data_topics(ctx)
     target = per_topic * len(topics)
     rejected = 0
@@ -158,7 +170,12 @@ def live(ctx: Context, writer: JsonlWriter) -> None:
             )
             tokens = topic.answer_tokens or ANSWER_TOKENS
             answer = teacher.text(messages, temperature=0.2, num_predict=tokens)
-            if form_problems(answer, 1, 6 if topic.answer_tokens > ANSWER_TOKENS else 3):
+            if form_problems(
+                answer,
+                1,
+                6 if topic.answer_tokens > ANSWER_TOKENS else 3,
+                ctx.pack.NOT_RAW_STATES,
+            ):
                 rejected += 1
                 continue
             writer.write(
@@ -188,9 +205,14 @@ def wikipedia(ctx: Context, writer: JsonlWriter) -> None:
         exclude |= {normalize(w.get("title", "")) for w in (snapshot.get("wiki") or {}).values()}
     # the first titles ask the router's knowledge questions - the summaries use the next ones
     skip = ctx.settings["generate"]["router"]["knowledge"] * 2
-    titles = wikipedia_titles(ctx.ws.generated / "wiki_titles.json", skip + target * 3, exclude)
+    titles = wikipedia_titles(
+        ctx.ws.generated / "wiki_titles.json",
+        skip + target * 3,
+        exclude,
+        ctx.config.wikipedia_language,
+    )
     titles = titles[skip:]
-    teacher = ctx.teacher()
+    teacher = ctx.teacher("writer")
     holdout = ctx.holdout()
     key = ctx.pack.QUESTIONS_KEY
     sentences = ctx.config.sentences
@@ -210,7 +232,6 @@ def wikipedia(ctx: Context, writer: JsonlWriter) -> None:
             list_schema(key),
             temperature=0.5,
             num_predict=800,
-            num_ctx=4096,
         )
         for title, question in zip(batch, sentences_of(reply, key), strict=False):
             if holdout.match(question):
@@ -228,7 +249,7 @@ def wikipedia(ctx: Context, writer: JsonlWriter) -> None:
             answer = teacher.text(
                 messages, temperature=0.2, num_predict=SUMMARY_TOKENS_PER_SENTENCE * sentences
             )
-            if form_problems(answer, 2, sentences + 1):
+            if form_problems(answer, 2, sentences + 1, ctx.pack.NOT_RAW_STATES):
                 rejected += 1
                 continue
             writer.write(

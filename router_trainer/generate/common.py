@@ -7,14 +7,15 @@ there, so a stopped generation continues where it ended. Progress is printed as
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import random
 import re
 from typing import Any
 
-from ..holdout import normalize
+from ..holdout import normalize, strip_accents
 
 PROGRESS = "@@progress"
 
@@ -88,9 +89,19 @@ class JsonlWriter:
         self.close()
 
 
-# --- speech recognition noise ---------------------------------------------------------------
+# --- requests side by side ------------------------------------------------------------------
 
-_ACCENTS = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
+
+def in_parallel(function: Callable[[Any], Any], items: list[Any], workers: int) -> list[Any]:
+    """``function`` for every item, ``workers`` at a time (the teacher's Ollama slots); the
+    results in the order of the items, so a resumed run writes the same rows."""
+    if workers <= 1 or len(items) <= 1:
+        return [function(item) for item in items]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(function, items))
+
+
+# --- speech recognition noise ---------------------------------------------------------------
 
 
 def noisy(text: str, rng: random.Random) -> str:
@@ -100,7 +111,7 @@ def noisy(text: str, rng: random.Random) -> str:
     if roll < 0.25:
         return text.lower()
     if roll < 0.4:
-        return text.translate(_ACCENTS)
+        return strip_accents(text)  # no accents, as typed in a hurry
     if roll < 0.55 and words and len(words[0]) > 2:
         words[0] = words[0][:2].upper() + words[0][2:]  # „JAkie” - Shift held
         return " ".join(words)
@@ -133,7 +144,9 @@ def tidy(text: str, rng: random.Random) -> str:
 
 def strip_speaker(text: str) -> str:
     """Models sometimes write the speaker („Kuba: …”); speech recognition never does."""
-    return re.sub(r"^[A-ZĄĆĘŁŃÓŚŹŻ][\w]{1,12}:\s*", "", str(text)).strip()
+    text = str(text).strip()
+    found = re.match(r"([^\W\d_]\w{1,12}):\s*", text)
+    return text[found.end() :].strip() if found and found[1][0].isupper() else text
 
 
 def sample(items: Iterable[Any], k: int, rng: random.Random) -> list[Any]:

@@ -24,7 +24,7 @@ HISTORY_LIMIT = 30
 SECTIONS = {
     "home_assistant", "router_repo", "inputs", "ollama", "generate", "test", "holdout",
     "dataset", "models", "export", "evaluate", "slot_values", "topic_overrides",
-    "intent_topics", "fallback_topic", "music", "shopping_items",
+    "intent_topics", "fallback_topic", "music", "shopping_items", "teacher",
     "sources",  # the old Mac share setting, read by nothing now
 }  # fmt: skip
 # numbers checked on save (a typo here would only fail hours later, in the middle of a job)
@@ -103,8 +103,23 @@ def check(text: str) -> dict[str, Any]:
             for key, (low, high) in MODEL_NUMBERS.items():
                 if isinstance(spec, dict) and key in spec:
                     errors += _number(spec[key], low, high, f"models.{name}.{key}")
+    from .teacher import PROVIDERS, ROLES
+
+    for role, spec in (merged.get("teacher") or {}).items():
+        provider = (spec or {}).get("provider", "ollama") if isinstance(spec, dict) else spec
+        if role not in ROLES:
+            errors.append(f"teacher.{role}: unknown role (one of {', '.join(ROLES)})")
+        elif provider not in PROVIDERS:
+            errors.append(f"teacher.{role}.provider: one of {', '.join(PROVIDERS)}")
+        elif provider == "openai" and not (spec or {}).get("model"):
+            errors.append(f"teacher.{role}.model: name the model of the OpenAI-compatible API")
     unknown = sorted(set(data) - SECTIONS)
     warnings = [f"unknown section: {key}" for key in unknown]
+    roles = [r for r in (merged.get("teacher") or {}).values() if isinstance(r, dict)]
+    if any(r.get("provider") in ("openai", "claude") for r in roles):
+        warnings.append(
+            "teacher: an API gets the household, entity names and logged questions of the home"
+        )
     return {"ok": not errors, "error": "; ".join(errors) or None, "warnings": warnings}
 
 

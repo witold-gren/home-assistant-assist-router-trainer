@@ -283,3 +283,193 @@ def test_router_rows_pad_small_topics(ctx) -> None:
     ])  # fmt: skip
     rows = build.router_rows(ctx, ctx.rng("b"))
     assert len(rows) == 6 and sum("+noise" in r["source"] for r in rows) == 4
+
+
+def test_a_value_set_outright_is_no_change(ctx) -> None:
+    """„Ustaw na 22 stopnie” reads back as change „ustaw”; the plan has no change - the same."""
+    label = control.Label("climate", {"intent": "HassTurnOn", "domain": "climate",
+                                      "area": "Salon", "value": 22})  # fmt: skip
+    set_word = ctx.integ.lang.CHANGE_SET
+    command = _command(ctx, domain="climate", area="Salon", value=22, change=set_word)
+    assert control.matches(label, command, None, set_word)
+    assert not control.matches(label, command, None)  # without the word it would be refused
+    more = _command(
+        ctx, domain="climate", area="Salon", value=22, change=ctx.integ.lang.CHANGE_MORE
+    )
+    assert not control.matches(label, more, None, set_word)
+
+
+def test_the_planned_device_counts_under_another_domain(ctx) -> None:
+    """A switch and a script of the same name: the device found is the one planned."""
+    label = control.Label("device_on_off", {"intent": "HassTurnOn", "domain": "switch",
+                                            "name": "Robot"}, "Robot")  # fmt: skip
+    command = _command(ctx, domain="script", name="Robot")
+    assert control.matches(label, command, "Robot")
+    assert not control.matches(label, command, "Lampa przy kanapie")
+
+
+def test_numbers_are_given_as_people_say_them() -> None:
+    assert control.spoken_number(22.0) == 22 and control.spoken_number(22.5) == "22,5"
+    assert control.spoken_number(40) == 40 and control.spoken_number("Salon") == "Salon"
+
+
+def test_requests_side_by_side_keep_the_order() -> None:
+    import threading
+    import time
+
+    from router_trainer.generate.common import in_parallel
+
+    threads = set()
+
+    def slow(n):
+        threads.add(threading.get_ident())
+        time.sleep(0.05 * (5 - n))  # the first finishes last
+        return n * 10
+
+    assert in_parallel(slow, [1, 2, 3, 4], 2) == [10, 20, 30, 40]
+    assert len(threads) == 2
+    assert in_parallel(lambda n: n + 1, [1, 2], 1) == [2, 3]
+
+
+def test_the_teacher_uses_one_context_and_a_fast_ollama(monkeypatch) -> None:
+    """Ollama reloads the model when num_ctx changes - every call uses the same one."""
+    from router_trainer import teacher as teacher_module
+
+    sent = []
+    monkeypatch.setattr(teacher_module, "http", lambda url, path, body=None, **kw:
+                        sent.append(body) or {"message": {"content": '{"a": 1}'}})  # fmt: skip
+    teacher = teacher_module.Teacher("http://x", "gemma4:26b")
+    teacher.json([{"role": "user", "content": "a"}], {}, num_predict=30)
+    teacher.text([{"role": "user", "content": "b"}])
+    assert {body["options"]["num_ctx"] for body in sent} == {teacher_module.NUM_CTX}
+    monkeypatch.delenv("OLLAMA_NUM_PARALLEL", raising=False)
+    env = teacher_module.ollama_env("127.0.0.1:11535", teacher_module.OLLAMA_DIR)
+    assert env["OLLAMA_NUM_PARALLEL"] == str(teacher_module.PARALLEL)
+    assert env["OLLAMA_FLASH_ATTENTION"] == "1" and env["OLLAMA_KV_CACHE_TYPE"] == "q8_0"
+
+
+def test_a_router_only_dataset_leaves_commands_and_answers_out(ctx) -> None:
+    from router_trainer.generate.common import JsonlWriter
+
+    with JsonlWriter(ctx.ws.generated / "router.jsonl") as writer:
+        for i in range(30):
+            writer.write(
+                {
+                    "role": "router",
+                    "part": "paraphrase",
+                    "text": f"Pytanie numer {i}",
+                    "topic": "inne",
+                    "source": "paraphrase",
+                }
+            )
+    with JsonlWriter(ctx.ws.generated / "control.jsonl") as writer:
+        writer.write(
+            {
+                "role": "control",
+                "part": "control:x",
+                "label": 0,
+                "text": "Zapal lampę",
+                "answer": "{}",
+                "source": "teacher",
+            }
+        )
+    path = build.build(ctx, "only-router", ("router",))
+    roles = {
+        json.loads(line)["role"]
+        for f in path.glob("*.jsonl")
+        for line in f.read_text().splitlines()
+        if line.strip()
+    }
+    assert roles == {"router"}
+
+
+def test_titles_come_from_the_wikipedia_of_the_language(tmp_path, monkeypatch) -> None:
+    import io
+
+    asked = []
+
+    def urlopen(request, timeout):
+        asked.append(request.full_url)
+        pages = [{"title": "Prague"}, {"title": "Vltava (river)"}]
+        return io.BytesIO(json.dumps({"query": {"random": pages}}).encode())
+
+    monkeypatch.setattr(router.urllib.request, "urlopen", urlopen)
+    titles = router.wikipedia_titles(tmp_path / "t.json", 2, set(), "cs")
+    assert titles == ["Prague", "Vltava"]
+    assert asked[0].startswith("https://cs.wikipedia.org/")
+
+
+def test_triggers_are_read_in_the_router_language() -> None:
+    triggers = [{"key": "a#0", "id": "a", "templates": ["turn on the {thing}"]}]
+    commands = {"lights": {"turn on the lamp"}}
+    assert router.map_triggers(triggers, commands, {}, "en") == {"a#0": "lights"}
+
+
+def test_the_trigger_report_says_where_each_trigger_goes(ctx) -> None:
+    config = ctx.input("ha_config")
+    config.mkdir(parents=True)
+    (config / "automations.yaml").write_text(
+        "- id: alarm\n  alias: Alarm\n  triggers:\n"
+        "  - trigger: conversation\n    command: ['czy alarm jest włączony']\n"
+        "  - trigger: conversation\n    command: ['włącz alarm']\n"
+        "- id: kawa\n  alias: Kawa\n  triggers:\n"
+        "  - trigger: conversation\n    command: ['zrób kawę']\n"
+        "- id: nowe\n  alias: Nowe\n  triggers:\n"
+        "  - trigger: conversation\n    command: ['coś nowego']\n",
+        encoding="utf-8",
+    )
+    ctx.settings["topic_overrides"] = {"alarm": "inne", "alarm#1": "sterowanie", "kawa": "brak"}
+    (ctx.ws.generated).mkdir(parents=True, exist_ok=True)
+    (ctx.ws.generated / "trigger_topics.json").write_text(
+        json.dumps({"nowe#0": {"topic": "pogoda"}}), encoding="utf-8"
+    )
+    rows = {r["key"]: (r["topic"], r["how"], r["known_topic"]) for r in router.trigger_report(ctx)}
+    assert rows == {
+        "alarm#0": ("inne", "override", True),  # the whole automation
+        "alarm#1": ("sterowanie", "override", True),  # one trigger of it
+        "kawa#0": ("brak", "override", False),  # a topic router.yaml does not have
+        "nowe#0": ("pogoda", "teacher", True),
+    }
+
+
+def test_raw_states_depend_on_the_language() -> None:
+    assert answers.form_problems("On jest w domu.", 1, 3) == []  # Polish: „on” is „he”
+    assert "raw state" in answers.form_problems("The lamp is on.", 1, 3, ())
+
+
+def test_custom_sentences_of_home_assistant_become_router_examples(ctx) -> None:
+    folder = ctx.input("ha_config") / "custom_sentences" / "pl"
+    folder.mkdir(parents=True)
+    (folder / "dom.yaml").write_text(
+        "language: pl\nintents:\n"
+        "  HassTurnOn:\n    data:\n      - sentences: ['odpal {name}']\n"
+        "  KawaIntent:\n    data:\n      - sentences: ['zrób (mi|nam) kawę [{rodzaj}]']\n"
+        "  PogodaDzialka:\n    data:\n      - sentences: ['jaka pogoda na działce']\n"
+        "lists:\n  rodzaj:\n    values: [espresso, latte]\n",
+        encoding="utf-8",
+    )
+    (folder / "broken.yaml").write_text("intents: [", encoding="utf-8")
+    ctx.settings["intent_topics"] = {"PogodaDzialka": "pogoda"}
+    ctx.settings["generate"]["router"]["per_template"] = 5
+    asked = []
+
+    def classify(texts):
+        asked.append(texts)
+        return "inne"
+
+    rows = router.custom_sentences(ctx, ctx.home, ctx.rng("c"), classify)
+    topics = {topic for text, topic, source in rows if source == "custom"}
+    by_text = {text: topic for text, topic, _ in rows}
+    assert topics == {"sterowanie", "inne", "pogoda"}
+    assert by_text["jaka pogoda na działce"] == "pogoda"
+    assert any(t.startswith("odpal ") and len(t) > 6 for t in by_text)  # a device of the home
+    assert any(t.startswith("zrób") for t in by_text if by_text[t] == "inne")
+    assert len(asked) == 1  # only the home's own intent
+    cache = json.loads((ctx.ws.generated / "trigger_topics.json").read_text(encoding="utf-8"))
+    assert cache["intent:KawaIntent"]["topic"] == "inne"
+    rows = router.custom_sentences(ctx, ctx.home, ctx.rng("c"), classify)  # saved: not asked again
+    assert len(asked) == 1
+
+
+def test_no_custom_sentences_no_rows(ctx) -> None:
+    assert router.custom_sentences(ctx, ctx.home, ctx.rng("c")) == []

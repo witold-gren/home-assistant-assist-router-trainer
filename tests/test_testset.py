@@ -166,6 +166,8 @@ def test_generator_writes_a_benchmark_test(ctx, monkeypatch) -> None:
     ctx.token = lambda: "t"
     monkeypatch.setattr(build, "start_local", lambda settings, root: "http://x")
     monkeypatch.setattr(build, "Teacher", FakeModel)
+    monkeypatch.setattr(build.teacher_module, "make",
+                        lambda settings, root, role: FakeModel(model=settings["ollama"][role]))  # fmt: skip
     vacuum = build.control_gen.Label("vacuum", {"intent": "HassVacuumStart", "domain": "vacuum"})
     monkeypatch.setattr(build.control_gen, "plan", lambda ctx, home, rng: vacuum)
     monkeypatch.setattr(ctx.integ.snapshot_data, "home", lambda url, token: ctx.home)
@@ -178,7 +180,7 @@ def test_generator_writes_a_benchmark_test(ctx, monkeypatch) -> None:
     monkeypatch.setattr(ctx.integ.snapshot_data, "wikipedia", lambda q, lang: ("Basen", article))
     # the training pool is empty, the test pool has one title
     monkeypatch.setattr(build.router_gen, "wikipedia_titles",
-                        lambda cache, count, exclude: [] if cache.name == "wiki_titles.json" else ["Basen"] * 3)  # fmt: skip
+                        lambda cache, count, exclude, language="pl": [] if cache.name == "wiki_titles.json" else ["Basen"] * 3)  # fmt: skip
     log = ctx.ws.path("inputs/unrecognized_commands.csv")
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text("﻿timestamp;area;device;kind;text;response;route;speaker\n"
@@ -234,3 +236,9 @@ def test_slot_values_suggested_once_and_saved(ctx) -> None:
     assert json.loads((ctx.ws.generated / "slot_values.json").read_text()) == {
         "dziecko": ["Ola", "Kuba"]
     }
+
+
+def test_fact_patterns_take_the_language_rules() -> None:
+    assert facts.pattern("pokój") == "pokój"  # no swaps without a language pack
+    assert facts.pattern("pokój", 5, {"ó": "[óo]", "o": "[oó]"}) == "p[oó]k[óo]j"
+    assert facts.pattern("swimming", 4) == "swim"

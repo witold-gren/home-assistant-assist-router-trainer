@@ -9,8 +9,11 @@ import { parse } from "./vendor/yaml.js";
 import { LANGUAGES, translate } from "./i18n.js";
 import { buildOutline, filterOutline, findNode, flattenOutline } from "./outline.js";
 import { describeChanges, diffHunks, diffLines } from "./changes.js";
+import { tourSeen } from "./tour.js";
+import { GROUPS, lessonByKey, lessonFor, lessonReady, lessonsDone } from "./lessons.js";
 import * as common from "./views/common.js";
 import { renderOverview } from "./views/overview.js";
+import { renderAuto } from "./views/auto.js";
 import {
   renderDataset, renderDatasets, renderGenerate, renderHa, renderRouter, renderTest, renderTests,
 } from "./views/data.js";
@@ -105,6 +108,7 @@ class RouterTrainerStudio extends LitElement {
     _menu: { state: true },
     _gear: { state: true },
     _error: { state: true },
+    _tour: { state: true },
   };
 
   // light DOM: the views are plain DOM and share studio.css
@@ -157,6 +161,8 @@ class RouterTrainerStudio extends LitElement {
       redraw: () => this._redraw(),
       refresh: () => this._refresh(),
       select: (key) => { this._select(key); this._redraw(); },
+      lessonFor: (helpKey) => lessonFor(helpKey)?.key ?? null,
+      startLesson: (key) => this._startLesson(key),
     });
     this._load();
   }
@@ -209,6 +215,8 @@ class RouterTrainerStudio extends LitElement {
       this._setState(state);
       this._applySettings(settings);
       this._error = null;
+      // the tour starts by itself the first time the studio opens in this browser (gpu-studio.md section 5a)
+      if (!tourSeen()) this._tour = { lesson: null };
     } catch (err) {
       this._error = err.message;
     }
@@ -439,7 +447,7 @@ class RouterTrainerStudio extends LitElement {
   /** A click outside ☰ and ⚙ closes their windows (the click on ☰ or ⚙ itself toggles them). */
   _onOutside(event) {
     if (!this._menu && !this._gear) return;
-    if (event.composedPath().some((el) => el.classList?.contains("menu-wrap"))) return;
+    if (event.composedPath().some((el) => el.classList?.contains("menu-wrap") || el.localName === "router-trainer-tour")) return;
     this._menu = false;
     this._gear = false;
   }
@@ -589,6 +597,7 @@ class RouterTrainerStudio extends LitElement {
     const status = this._state.status || {};
     switch (kind) {
       case "overview": return { ...live, render: renderOverview };
+      case "auto": return { ...live, render: renderAuto };
       case "ha": return { ...live, render: renderHa };
       case "router": return { ...live, render: renderRouter };
       case "tests": return { ...live, render: renderTests };
@@ -793,7 +802,49 @@ class RouterTrainerStudio extends LitElement {
         ${this._renderSplitter("right")} ${this._folded.right ? this._renderFolded("right") : this._renderSide(spec)}
       </div>
       ${this._renderDialog()}
+      ${this._tour ? html`<router-trainer-tour .root=${this} .host=${this} .t=${(key, values) => this._t(key, values)}
+        .lesson=${this._tour.lesson} @tour-close=${() => { this._tour = null; }}></router-trainer-tour>` : nothing}
     `;
+  }
+
+  // --- the tour and the lessons (gpu-studio.md section 5a) -------------------------------------------
+
+  async _openTour() {
+    this._gear = false;
+    this._tour = null;
+    await this.updateComplete;
+    this._tour = { lesson: null };
+  }
+
+  /** A lesson from the list or from the "?" of a card; one already shown is replaced. */
+  async _startLesson(key) {
+    const lesson = lessonByKey(key);
+    if (!lesson) return;
+    this._gear = false;
+    this._dialog = null;
+    this._tour = null;
+    await this.updateComplete;
+    this._tour = { lesson };
+  }
+
+  _renderLessons() {
+    const done = lessonsDone();
+    const body = html`<p class="hint">${this._t("lessons_lead")}</p>
+      ${GROUPS.map(([heading, keys]) => html`<h3 class="lessons-group" data-lessons-group=${heading}>${this._t(heading)}</h3>
+        <div class="lessons-grid">${keys.map(lessonByKey).map((lesson) => {
+          const ready = lessonReady(lesson, this);
+          const finished = done.includes(lesson.key);
+          return html`<button class="lesson ${finished ? "done" : ""}" data-lesson=${lesson.key} ?disabled=${!ready}
+            @click=${() => this._startLesson(lesson.key)}>
+            <ha-icon icon=${lesson.icon}></ha-icon>
+            <span class="lesson-text"><strong>${this._t(`lesson_${lesson.key}_name`)}</strong>
+              <small>${ready ? this._t(`lesson_${lesson.key}_about`) : this._t(`lessons_needs_${lesson.needs}`)}</small></span>
+            <span class="lesson-meta">${finished ? html`<ha-icon class="tick" icon="mdi:check-circle" data-lesson-done></ha-icon>`
+              : this._t("lessons_steps", { count: lesson.steps.length })}</span>
+          </button>`;
+        })}</div>`)}
+      <p class="hint">${this._t("lessons_hint")}</p>`;
+    return this._dialogShell("lessons", this._t("lessons_title"), body);
   }
 
   /** The job chip: stage, how far (training steps or generated examples) and the time left. */
@@ -1017,6 +1068,7 @@ class RouterTrainerStudio extends LitElement {
     if (this._dialog === "save") return this._renderSave();
     if (this._dialog === "history") return this._renderHistory();
     if (this._dialog === "guide") return this._renderGuide();
+    if (this._dialog === "lessons") return this._renderLessons();
     return nothing;
   }
 
@@ -1102,6 +1154,11 @@ class RouterTrainerStudio extends LitElement {
       </div>
       <button class="gear-all" data-gear-all @click=${() => { this._gear = false; this._select("look"); }}>
         <ha-icon icon="mdi:palette-outline"></ha-icon>${this._t("gear_all")}</button>
+      <span class="gear-label">${this._t("gear_learn")}</span>
+      <button class="gear-all" data-gear-tour @click=${() => this._openTour()}>
+        <ha-icon icon="mdi:map-marker-path"></ha-icon>${this._t("gear_tour")}</button>
+      <button class="gear-all" data-gear-lessons @click=${() => { this._gear = false; this._dialog = "lessons"; }}>
+        <ha-icon icon="mdi:school-outline"></ha-icon>${this._t("gear_lessons")}</button>
     </div>`;
   }
 

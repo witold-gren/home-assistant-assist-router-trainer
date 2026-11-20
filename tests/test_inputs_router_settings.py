@@ -98,8 +98,10 @@ def test_websocket_url() -> None:
 class FakeHomeAssistant:
     """aiohttp WebSocket server answering like HA: auth, then the export command."""
 
-    def __init__(self, answer: dict, token: str = "secret") -> None:
+    def __init__(self, answer: dict, token: str = "secret", reply=None) -> None:
         self.answer = answer
+        self.reply = reply  # message -> answer, for several commands on one socket
+        self.messages: list[dict] = []
         self.token = token
         self.loop = asyncio.new_event_loop()
         self.port = 0
@@ -116,8 +118,16 @@ class FakeHomeAssistant:
             await socket.close()
             return socket
         await socket.send_json({"type": "auth_ok"})
-        message = await socket.receive_json()
-        await socket.send_json({"id": message["id"], "type": "result", **self.answer})
+        while True:
+            try:
+                message = await socket.receive_json()
+            except TypeError:  # the client closed the socket
+                break
+            self.messages.append(message)
+            answer = self.reply(message) if self.reply else self.answer
+            await socket.send_json({"id": message["id"], "type": "result", **answer})
+            if not self.reply:
+                break
         await socket.close()
         return socket
 
@@ -178,6 +188,65 @@ def test_unreachable_home_assistant(tmp_path, no_socket_block) -> None:
     ws = connected(tmp_path, "http://127.0.0.1:9")
     with pytest.raises(ha_client.HaError, match=r"cannot be reached|127\.0\.0\.1"):
         ha_inputs.fetch(ws)
+
+
+def _home_recordings(audio: dict[str, bytes], part: int = 2):
+    """Answers of Assist Router 0.1.11: the list, then at most ``part`` files per call."""
+    import base64
+
+    def reply(message):
+        if message["type"] == ha_inputs.RECORDINGS:
+            files = [{"path": p, "size": len(d), "modified": 0} for p, d in audio.items()]
+            return {"success": True, "result": {"configured": True, "files": files}}
+        if message["type"] == ha_inputs.RECORDING_FILES:
+            served = [p for p in message["paths"] if p in audio][:part]
+            data = [{"path": p, "data": base64.b64encode(audio[p]).decode()} for p in served]
+            return {"success": True, "result": {"files": data}}
+        return {"success": True, "result": EXPORT}
+
+    return reply
+
+
+def test_recordings_come_once(tmp_path, no_socket_block) -> None:
+    audio = {
+        "dev/Kuchnia/1/01_stt.wav": b"aa",
+        "dev/Salon/2/01_stt.wav": b"bbb",
+        "Salon/3/01_stt.wav": b"c",
+        "../outside.wav": b"x",  # never written outside inputs/recordings
+    }
+    with FakeHomeAssistant({}, reply=_home_recordings(audio)) as ha:
+        ws = connected(tmp_path, f"http://127.0.0.1:{ha.port}")
+        summary = ha_inputs.fetch_all(ws)
+        assert summary["version"] == "0.1.8"
+        assert summary["recordings"] == {
+            "configured": True, "in_home_assistant": 4, "fetched": 3, "missing": 0,
+        }  # fmt: skip
+        folder = ha_inputs.recordings_folder(ws)
+        assert (folder / "dev" / "Salon" / "2" / "01_stt.wav").read_bytes() == b"bbb"
+        assert not (folder.parent / "outside.wav").exists()
+        again = ha_inputs.fetch_recordings(ws)  # the same sizes here: nothing is asked for
+        assert again["fetched"] == 0
+        assert ha.messages[-1]["type"] == ha_inputs.RECORDINGS
+
+
+def test_an_older_router_without_recordings_is_said(tmp_path, no_socket_block) -> None:
+    def reply(message):
+        if message["type"] == ha_inputs.COMMAND:
+            return {"success": True, "result": EXPORT}
+        return {"success": False, "error": {"code": "unknown_command", "message": "Unknown"}}
+
+    with FakeHomeAssistant({}, reply=reply) as ha:
+        ws = connected(tmp_path, f"http://127.0.0.1:{ha.port}")
+        recordings = ha_inputs.fetch_all(ws)["recordings"]
+    assert recordings["fetched"] == 0 and "0.1.11" in recordings["error"]
+
+
+def test_recordings_switched_off_are_not_asked_for(tmp_path, no_socket_block) -> None:
+    with FakeHomeAssistant({}, reply=_home_recordings({"a/01_stt.wav": b"a"})) as ha:
+        ws = connected(tmp_path, f"http://127.0.0.1:{ha.port}")
+        ws.config_file.write_text("generate:\n  router:\n    recordings: false\n", "utf-8")
+        assert "recordings" not in ha_inputs.fetch_all(ws)
+        assert [m["type"] for m in ha.messages] == [ha_inputs.COMMAND]
 
 
 # --- the router code -------------------------------------------------------------------------

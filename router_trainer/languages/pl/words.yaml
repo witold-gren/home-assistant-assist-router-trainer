@@ -1,0 +1,179 @@
+# Assist Router trainer - words of the language (Polish).
+#
+# Vocabulary the generators use: paraphrase and command styles, small talk, gibberish (syllables,
+# subtitles, fillers), made-up data for answers (weekdays, events, lessons, chores), what Whisper
+# writes for silence, and the rules for test facts (STEM_LETTERS, INFLECTION_SWAPS). Translate the
+# words, never the names; keep `!tuple` tags. The comment above an entry says what it is for.
+
+# what Whisper writes for silence or noise (no command - a recording with only this is skipped)
+WHISPER_HALLUCINATIONS:
+- Dziękuję.
+- Dziękuję za uwagę.
+- Dziękuję bardzo.
+- Napisy stworzone przez społeczność Amara.org
+- Napisy wykonane przez społeczność Amara.org
+- Wszystkie prawa zastrzeżone.
+- '...'
+
+# fragments of what Whisper writes from video subtitles it learnt on (any sentence with one is noise)
+WHISPER_HALLUCINATION_PARTS:
+- amara.org
+- subtitles
+- subskryb
+- zafollow
+- za oglądanie
+- dzięki za uwagę
+- napisy stworzone
+- napisy wykonane
+- prawa zastrzeżone
+- kolejnych odcink
+
+STYLES:
+- krótkie, potoczne
+- dłuższe, z kontekstem („bo zaraz wychodzimy”, „jak wrócę”)
+- z imionami domowników albo „mama”, „tata”, „dzieci”
+- z błędami jak z rozpoznawania mowy (przekręcone słowa, brak ogonków, „JAkie”)
+- zaczynające się od „a”, „i”, „no to”, „słuchaj”, „powiedz mi”
+- pośrednie i nieoczywiste, które człowiek by zrozumiał
+
+# contrast: sentences on both sides of the border of two topics that get mixed up
+CONTRAST_KEYS: !tuple [temat_a, temat_b]
+
+# rendering `command:` templates of router.yaml (reference sentences of a topic):
+# (day code, Polish day name) - templates use `when`/`kiedy`
+WHEN:
+- !tuple [null, null]
+- !tuple [today, dzis]
+- !tuple [tomorrow, jutro]
+- !tuple [day_after_tomorrow, pojutrze]
+- !tuple [weekend, weekend]
+- !tuple [week, tydzien]
+
+SAMPLE_TEXTS: ['', kiedy jedzie tramwaj, czy pralka skończyła, 'a dzisiaj?']
+
+CHAT:
+- Dziękuję
+- Dzięki
+- Co słychać?
+- Jak się masz?
+- Kim jesteś?
+- Opowiedz kawał
+- Opowiedz jakiś dowcip
+- Rozśmiesz mnie
+- Zrób mi kanapkę
+- Ugotuj obiad
+- Nudzi mi się
+- Zaśpiewaj piosenkę
+- Lubisz mnie?
+- Cześć
+- Hej
+- Halo
+- Nie, nic
+- Anuluj
+- Nieważne
+- Co potrafisz?
+- Jak masz na imię?
+- Powiedz coś miłego
+- Ile masz lat?
+- Co u ciebie?
+- Wymyśl zagadkę
+- Policz do dziesięciu
+
+# gibberish: pieces of film subtitles and syllable salad (topic with `unclear`)
+SUBTITLES:
+- Dziękuję za oglądanie
+- Napisy stworzone przez społeczność
+- Subskrybuj kanał
+- Do zobaczenia w następnym odcinku
+- Tłumaczenie i napisy
+- Zapraszam na kolejny film
+
+SYLLABLES: [ka, ro, mi, sze, dla, prze, wy, 'no', ta, ję, ście, bu, ło]
+
+FILLERS: ['no', że, to, a, i, tak, w, na, jak, bo, tego, znaczy, ten]
+
+COMMAND_STYLES:
+- zwykłe, krótkie polecenia
+- potoczne, z „proszę”, „możesz”, „zrób”
+- z błędami jak z rozpoznawania mowy
+- zwykłe, czasem z krótkim powodem („bo ciemno”)
+
+FIELD_NAMES:
+  intent: intencja
+  domain: rodzaj urządzeń
+  area: pomieszczenie
+  floor: piętro
+  device: konkretne urządzenie
+  all: wszystkie urządzenia
+  value: wartość
+  change: zmiana
+  item: co dopisać do listy
+  color: kolor światła
+  white: barwa białego światła
+  query: czego szukać
+  media_class: rodzaj muzyki
+  artist: wykonawca
+  radio: podobna muzyka bez końca (radio)
+
+WEEKDAYS: !tuple [poniedziałek, wtorek, środa, czwartek, piątek, sobota, niedziela]
+
+EVENTS:
+- dentysta
+- basen
+- trening piłki
+- zebranie w szkole
+- urodziny babci
+- fryzjer
+- kino
+- lekcja gitary
+- zakupy
+- wizyta u lekarza
+- angielski
+- szachy
+- przegląd auta
+- spotkanie z klientem
+- joga
+- korepetycje
+- teatr
+- tańce
+
+LESSONS: [matematyka, polski, angielski, historia, biologia, geografia, chemia, fizyka, WF, informatyka,
+  plastyka, muzyka, religia, technika]
+
+CHORES: [zmywarka, odkurzanie, śmieci, pranie, kuchnia, łazienka, pies]
+
+UNKNOWN_QUESTIONS:
+- Kiedy jest przegląd roweru?
+- Ile kosztował ostatni rachunek za prąd?
+- O której przyjedzie kurier?
+- Kiedy wraca wujek z delegacji?
+- Jaki jest kod do furtki?
+- Ile stron przeczytałem wczoraj?
+
+LESSON_TIMES:
+- !tuple ['8:00', '8:45']
+- !tuple ['8:55', '9:40']
+- !tuple ['9:50', '10:35']
+- !tuple ['10:55', '11:40']
+- !tuple ['11:50', '12:35']
+- !tuple ['12:45', '13:30']
+- !tuple ['13:40', '14:25']
+
+# facts of a test answer as patterns (testset/facts.py): the first letters of a word stand for
+# all its forms („basen”, „basenie”), and inflection swaps some letters („pokój” / „pokoju”)
+STEM_LETTERS: 5
+
+INFLECTION_SWAPS:
+  ó: '[óo]'
+  o: '[oó]'
+  ą: '[ąę]'
+  ę: '[ęą]'
+
+# Home Assistant state words that are ordinary words of the language - not a raw state in an
+# answer (generate/answers.py): „on” is „he”
+NOT_RAW_STATES: !tuple ['on', 'off']
+
+# stems of words too general to test an answer (patterns of facts.pattern)
+FACT_GENERIC: !tuple [roku, rok, tys, około, okolo, jest, był, była, było, oraz, który, która, stycz,
+  luteg, marca, kwiet, maja, czerw, lipca, sierp, wrześ, paźdz, listo, grudn, dzien, dzień, godzi, minut,
+  min]

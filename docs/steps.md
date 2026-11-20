@@ -2,6 +2,63 @@
 
 The whole road, in the order of the tree. The overview shows what is done and the **next step**.
 
+## Automatic training {#auto}
+
+**Start → Automatic training** takes all the steps of this page by itself, as one job - best overnight:
+
+1. fetching from Home Assistant (like step 1) and the router code of the version Home Assistant runs (step 2);
+2. the test: <span class="ui">From Home Assistant</span> (`model_test.yaml`, if you have one) or
+   <span class="ui">New for this home</span> - the writer and the judge as in step 3; cases the judge does not
+   trust drop out by themselves, so nothing waits for a review;
+3. the home snapshot, freezing the test, generating and the dataset (step 4);
+4. training of each ticked model (step 5), export to Ollama in the home (step 6);
+5. the comparison with the model Assist Router uses now (the model's `baseline` in the settings, e.g.
+   `gemma4:26b`).
+
+At the end the **Result** card shows for each model the accuracy of choosing the topic and the average time - new
+and now - and a verdict: *better* (at least as accurate and faster), *as accurate, not faster* or *less accurate*.
+The most accurate of the better ones is recommended. Nothing changes in Home Assistant until you click
+<span class="ui">Use in Assist Router</span> and confirm: the studio then sets the **router model** in Assist
+Router's options (Configure → Question router), as when it is changed by hand; the answer model stays. The model
+before is remembered - *Restore* puts it back.
+
+<span class="ui">Only choosing the topic</span> (the default): the small model takes over the router alone,
+control commands and answers stay with the answer model - then they are not generated, which makes the run hours
+shorter. Untick it if the model is to do everything.
+
+**Real speech in the data.** The router's questions get two sources through Home Assistant's Piper and Whisper
+(Wyoming, ports 10200 and 10300 of the home server):
+
+- natural questions read by Piper (every voice of the language in turn) and written by Whisper - the ones Whisper
+  wrote differently stay, with the topic of the original (`asr_per_topic`, 40 per topic by default);
+- recordings of your own commands, if Home Assistant keeps them (`assist_pipeline: debug_recording_dir`), copied
+  to `inputs/recordings` in the workspace - Whisper writes them, the teacher gives the topic, test-like sentences
+  drop out. The recordings and their text stay on the machine.
+
+Without the home server both sources are skipped with a message.
+
+**Labels that agree with `router.yaml`.** The teacher writes paraphrases seeing one topic at a time, so now and
+then it writes a sentence `router.yaml` sends elsewhere („Puść podcast w kuchni” for `media`, although its
+description says that „puść” is `sterowanie`). The small model then learns exactly that mistake. So every teacher
+sentence is read once more **with the router's own prompt** (all topics and descriptions, as Home Assistant asks):
+a sentence that lands in another topic is dropped with its Whisper copies, and the paraphrases refill what is
+missing (`check_labels`, on by default). The answers are in `generated/labels.json`, the dropped sentences in
+`generated/labels_dropped.jsonl` - worth a look, they show unclear topic descriptions.
+
+**Contrast pairs.** For topics that get mixed up the teacher writes sentences on both sides of the border: the same
+words, rooms and devices, a different topic („Co teraz gra w kuchni?” - `media`, „Puść muzykę w kuchni” -
+`sterowanie`). Each has to pass the label check. The pairs come from the errors of the last evaluations
+(`contrast.pairs: auto`, of the trained models and of the baseline) or from a list in the settings;
+`contrast.per_side` sentences per topic of a pair (40 by default). `contrast.extra` pairs are always added,
+also with `auto` - for a new topic that has no evaluation errors yet (`[[czytania, wiadomosci]]`).
+
+**Automation triggers** get their topic by key in `topic_overrides`. A key is the whole automation `id` or one of
+its triggers: `id#number` (from 0, in the order of its `conversation` triggers) - for example questions about the
+alarm state in `alarm` and the commands „włącz alarm” in `sterowanie`.
+
+The topic is what is judged, because only that is taken over by the small model. Parsing control commands goes
+through the answer model when `router.yaml` has `control_model: answer`.
+
 ## 1. Home Assistant {#home-assistant}
 
 **Home Assistant → Connection and files**: the HA address (with the port) and an **administrator's** long-lived

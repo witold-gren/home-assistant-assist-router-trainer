@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+from .. import teacher as teacher_module
 from ..context import Context
 from ..generate import answers as answers_gen, control as control_gen, router as router_gen
 from ..generate.common import list_schema, progress, read_jsonl, sentences_of, stage
@@ -83,7 +84,6 @@ def _write_questions(
             list_schema(key),
             temperature=0.9,
             num_predict=1500,
-            num_ctx=4096,
             seed=rng.randrange(1 << 30),
         )
         out += sentences_of(reply, key)
@@ -102,7 +102,8 @@ def _judge_facts(judge: Teacher, ctx: Context, question: str, source: str, what:
     reply = judge.json([{"role": "user", "content": prompt}], schema, num_predict=300) or {}
     must = facts.to_patterns(
         reply.get(ctx.pack.FACTS_KEY) or [], source, question=question,
-        generic=frozenset(ctx.pack.FACT_GENERIC),
+        generic=frozenset(ctx.pack.FACT_GENERIC), stem=ctx.pack.STEM_LETTERS,
+        swaps=ctx.pack.INFLECTION_SWAPS,
     )  # fmt: skip
     must = facts.required(must)
     # no "never" from the judge: a good answer may name other days or people for context
@@ -135,8 +136,7 @@ def build(ctx: Context, name: str) -> Path:
     stage("test writer")
     # one model on the card at a time: the teacher (judge) leaves it for the writer
     Teacher(url, ctx.settings["ollama"]["teacher"]).unload()
-    writer = Teacher(url, ctx.settings["ollama"]["test_writer"])
-    writer.ensure()
+    writer = teacher_module.make(ctx.settings, ctx.ws.root, "test_writer")
     log = [q for q in router_gen.log_texts(ctx.input("log")) if _ok(q, examples, training, seen)]
     writer_topics = {}
     for i, question in enumerate(log):
@@ -161,7 +161,6 @@ def build(ctx: Context, name: str) -> Path:
             list_schema(ctx.pack.SENTENCES_KEY),
             temperature=0.9,
             num_predict=200,
-            num_ctx=4096,
         )
         for text in sentences_of(reply, ctx.pack.SENTENCES_KEY)[:1]:
             if _ok(text, examples, training, seen):
@@ -175,7 +174,10 @@ def build(ctx: Context, name: str) -> Path:
     training_pool = ctx.ws.generated / "wiki_titles.json"
     used_titles = {normalize(t) for t in router_gen.wikipedia_titles(training_pool, 0, set())}
     pool = router_gen.wikipedia_titles(
-        ctx.ws.generated / "wiki_titles_test.json", cfg["wikipedia"] * 4, used_titles
+        ctx.ws.generated / "wiki_titles_test.json",
+        cfg["wikipedia"] * 4,
+        used_titles,
+        ctx.config.wikipedia_language,
     )
     rng.shuffle(pool)
     wiki_questions = []
@@ -186,18 +188,18 @@ def build(ctx: Context, name: str) -> Path:
             list_schema(ctx.pack.QUESTIONS_KEY),
             temperature=0.5,
             num_predict=800,
-            num_ctx=4096,
         )
         for title, question in zip(
             batch, sentences_of(reply, ctx.pack.QUESTIONS_KEY), strict=False
         ):
             if _ok(question, examples, training, seen):
                 wiki_questions.append((title, question))
-    writer.unload()
+    if hasattr(writer, "unload") and not isinstance(writer, teacher_module.CachedTeacher):
+        writer.unload()  # the local Ollama frees the card for the judge
 
     # --- phase 2: the judge ------------------------------------------------------------------
     stage("test judge")
-    judge = ctx.teacher()
+    judge = ctx.teacher("judge")
     router_cases: list[list[str]] = []
     for i, topic in enumerate(topics):
         picked = []
@@ -311,7 +313,7 @@ def build(ctx: Context, name: str) -> Path:
         if normalize(found) in used_titles or len(article) < 300:
             dropped["wikipedia: article missing or used in training"] += 1
             continue
-        must, never = _judge_facts(judge, ctx, question, article, "artykułu")
+        must, never = _judge_facts(judge, ctx, question, article, ctx.pack.ARTICLE_WORD)
         if not must:
             dropped["wikipedia: no fact in the article"] += 1
             continue

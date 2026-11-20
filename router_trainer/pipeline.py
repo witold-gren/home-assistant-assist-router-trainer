@@ -91,7 +91,9 @@ def run(
     upload: bool = True,
     with_base: bool = True,
     overrides: dict[str, Any] | None = None,
+    roles: tuple[str, ...] | None = None,
 ) -> int:
+    """``roles`` - only these roles are generated and go into the dataset (default: all)."""
     unknown = [s for s in steps if s not in STEPS]
     if unknown:
         raise ValueError(f"unknown steps: {', '.join(unknown)} (known: {', '.join(STEPS)})")
@@ -129,7 +131,7 @@ def run(
         elif step == "build":
             from .generate import build
 
-            build.build(ctx, dataset)
+            build.build(ctx, dataset, roles or build.ROLES)
     if not any(s in steps for s in MODEL_STEPS):
         return 0
     if ctx is not None and "train" in steps:

@@ -1,0 +1,89 @@
+# Assist Router trainer - texts of the language (Polish).
+#
+# The prompts the teacher model gets and a few words the generators use. Translate the values,
+# never the names. Keep every {field} (the code fills them in) - the tests check each template has
+# the same fields as in Polish. *_KEY are JSON key names of the teacher's answers; they may be
+# translated (a model fills in keys of its own language more reliably).
+
+CODE: pl
+
+SENTENCES_KEY: zdania
+
+QUESTIONS_KEY: pytania
+
+HINT_KNOWLEDGE: ' Pytania o wiedzę ogólną: ludzie, miejsca, historia, nauka, przyroda, definicje.'
+
+HINT_UNCLEAR: ' To BEŁKOT z błędnego rozpoznania mowy: urwane zdania, przypadkowe słowa, zlepki sylab,
+  fragmenty rozmów domowników nieskierowane do asystenta, napisy z filmów. Bez sensu jako polecenie czy
+  pytanie.'
+
+MUSIC_WORD: muzykę
+
+NEGATIVE: nie (wiem|mam|ma |widz|znalaz|posiad|mogę)|brak|nic nie
+
+TEST_STYLE: 'naturalne i różnorodne: krótkie i dłuższe, potoczne, czasem niedokładne jak z rozpoznawania
+  mowy'
+
+FACTS_KEY: fakty
+
+# „Below the …” of facts_prompt for a Wikipedia article (the default is the data, „danych”)
+ARTICLE_WORD: artykułu
+
+# values of {wildcards} in the sentence triggers of automations
+VALUES_KEY: wartosci
+
+# --- teacher prompts ---------------------------------------------------------------------------
+# str.format templates: every {field} stays (the tests check them). {json} is the answer format
+# the code builds from the *_KEY names above, e.g. {"zdania": [...]}.
+
+# Paraphrases of one topic (generate/router.py). {examples} - the topic's examples or NO_EXAMPLES.
+PARAPHRASE_PROMPT: 'Domownicy: {household} Wygeneruj {count} różnych wypowiedzi po polsku, które
+  domownik powiedziałby asystentowi głosowemu na temat: {topic} ({description}). Przykłady:
+  {examples}.{hint} Styl: {style}. Każda wypowiedź inna, bez numeracji, bez imienia mówiącego na
+  początku. Zwróć JSON: {json}.'
+# when a topic has no examples
+NO_EXAMPLES: brak
+
+# Sentences on both sides of the border of two topics that get mixed up (generate/labels.py).
+CONTRAST_PROMPT: |-
+  Domownicy: {household} Asystent głosowy przydziela każdą wypowiedź do jednego tematu. Te dwa tematy łatwo pomylić:
+  A) {a}: {a_description}. Przykłady: {a_examples}.
+  B) {b}: {b_description}. Przykłady: {b_examples}.
+  Napisz po {count} wypowiedzi do każdego tematu, leżących blisko granicy: te same słowa, pokoje, urządzenia lub osoby, ale według opisów wyraźnie należące do jednego tematu (np. pytanie o stan i polecenie zmiany tego samego).{hint} Styl: {style}. Bez numeracji, bez imienia mówiącego na początku. Zwróć JSON: {json}.
+# what goes into each list of the contrast answer
+CONTRAST_LIST: '[... zdania tematu {topic}]'
+
+# Hints added to the paraphrase prompt: the "everything else" topic, control, the home's rooms.
+HINT_OTHER: ' To temat „wszystko inne”: rozmowa, żarty, prośby niezwiązane z domem, pytania, na
+  które asystent domu nie ma danych. NIE pisz wypowiedzi pasujących do tematów: {others}.'
+HINT_CONTROL: ' To POLECENIA sterowania urządzeniami (włącz, wyłącz, ustaw, przyciemnij, rolety,
+  temperatura, głośność, muzyka, odkurzacz, lista zakupów). Pokoje: {areas}; urządzenia: {devices}.'
+HINT_ROOMS: ' Pokoje w domu: {areas}.'
+
+# One natural question per encyclopedia title (knowledge topic, Wikipedia answers, the test).
+KNOWLEDGE_PROMPT: 'Dla każdego hasła z listy napisz jedno krótkie pytanie po polsku, jakie domownik
+  zadałby asystentowi głosowemu (np. „Kim był …?”, „Gdzie leży …?”, „Co to jest …?”, „Opowiedz mi
+  o …”), z poprawną odmianą. Hasła: {titles}. Zwróć JSON: {json} - po jednym pytaniu na hasło.'
+
+# Voice commands that mean exactly the planned command (generate/control.py, the test).
+COMMAND_PROMPT: 'Napisz {count} różnych poleceń głosowych po polsku dla asystenta domu, które znaczą
+  dokładnie to: {details}. Nie dodawaj innych urządzeń, pomieszczeń ani wartości. Nazwę urządzenia
+  i pomieszczenia odmieniaj poprawnie (np. „w kuchni”, „lampkę”). Styl: {style}. Bez numeracji.
+  Zwróć JSON: {json}.'
+
+# The judge picks short facts a good answer must contain, copied word for word (the test).
+# {what} - FACTS_DATA_WORD or ARTICLE_WORD, in the form „Below the …” needs.
+FACTS_PROMPT: |-
+  Pytanie: {question}
+  Poniżej {what}. Wypisz 2-4 krótkie fakty (godzina, liczba, nazwa, jedno-dwa słowa), które MUSI zawierać poprawna odpowiedź na pytanie, a których nie ma w samym pytaniu. Wybieraj to, co odpowiedź po polsku powie dosłownie: liczby, godziny, imiona, polskie nazwy - nie angielskie nazwy atrybutów, marek ani identyfikatory. Każdy fakt skopiuj z {what} ZNAK W ZNAK (te same litery, cyfry i odmiana), nie tłumacz i nie streszczaj; pomiń angielskie stany urządzeń (np. sunny, on, off). Gdy w {what} nie ma odpowiedzi, zwróć pustą listę. Zwróć JSON: {json}.
+
+  {source}
+# „Below the data” - the default {what} of FACTS_PROMPT
+FACTS_DATA_WORD: danych
+
+# Values for a {wildcard} of the home's sentence triggers (generate/router.py).
+# {slot} is the wildcard with its braces, e.g. {kto}.
+SLOT_VALUES_PROMPT: 'W zdaniach poleceń asystenta domowego jest miejsce {slot}: {templates}.
+  {household} Pokoje: {rooms}. Urządzenia (część): {devices}. Podaj 8-12 różnych wartości, które
+  domownik naprawdę mógłby powiedzieć w miejscu {slot}, w formie pasującej do zdań (odmiana!). Bez
+  numeracji. Zwróć JSON: {json}.'

@@ -147,13 +147,18 @@ def test_fetch_from_home_assistant_runs_in_the_background(panel, monkeypatch) ->
         return {"version": "0.1.8"}
 
     monkeypatch.setattr(ha_inputs, "fetch", fetch)
+    monkeypatch.setattr(ha_inputs, "fetch_recordings", lambda ws: {"fetched": 2})
     panel.action({"action": "fetch"})
     assert panel.state()["fetching"]["running"]
     with pytest.raises(RuntimeError, match="still running"):
         panel.action({"action": "fetch"})
     release.set()
     assert wait(lambda: not panel.fetching["running"])
-    assert panel.fetching == {"running": False, "ok": True, "summary": {"version": "0.1.8"}}
+    assert panel.fetching == {
+        "running": False,
+        "ok": True,
+        "summary": {"version": "0.1.8", "recordings": {"fetched": 2}},  # recordings too
+    }
 
     def refused(ws):
         raise ha_inputs.HaError("Assist Router in Home Assistant is too old")

@@ -98,8 +98,56 @@ def build_parser() -> argparse.ArgumentParser:
     tryit.add_argument("--models", nargs="+", required=True)
 
     sub.add_parser("fetch", help="inputs from Home Assistant (Assist Router export) into inputs/")
+    handoff = sub.add_parser(
+        "handoff", help="the teacher by hand: export tasks for any AI chat, import the answers"
+    )
+    handoff.add_argument("action", choices=["export", "import"])
+    handoff.add_argument("role", choices=["writer", "judge"])
+    handoff.add_argument("file", nargs="?", help="import: the answers (JSON lines or table)")
+    handoff.add_argument("--out", help="export: the folder (default workspace/handoff/…)")
+    handoff.add_argument("--per-topic", type=int, help="export writer: sentences per topic")
+    lang = sub.add_parser(
+        "language", help="a new language: a translated, checked draft of both packs (new | check)"
+    )
+    lang.add_argument("action", choices=["new", "check"])
+    lang.add_argument("code", help="the language code, e.g. cs")
+    lang.add_argument("--home", action="store_true", help="use the names of the home in HA")
+    lang.add_argument("--answers", help="answers of a manual writer (tasks.jsonl answered)")
+    lang.add_argument("--router-repo", help="the Assist Router repository (default: the trainer's)")
+    teacher_cmd = sub.add_parser("teacher", help="the teacher of each role: check, API keys")
+    teacher_cmd.add_argument("action", choices=["check", "keys"])
+    teacher_cmd.add_argument("role", nargs="?", default="writer")
+    language = sub.add_parser(
+        "languages",
+        help="language packs of the trainer; --check CODE|FOLDER lists what a pack lacks",
+    )
+    language.add_argument("--check", metavar="CODE|FOLDER")
+    triggers = sub.add_parser(
+        "triggers", help="sentence triggers of the automations with their topics (for overrides)"
+    )
+    triggers.add_argument("--json", action="store_true", help="JSON instead of a table")
     router = sub.add_parser("router", help="router code of the version HA runs (JSON)")
     router.add_argument("--version", help="another version than the one in Home Assistant")
+
+    auto = sub.add_parser(
+        "auto", help="automatic training: from Home Assistant to a compared model, one job"
+    )
+    auto.add_argument("--dataset", required=True)
+    auto.add_argument("--models", nargs="+", required=True)
+    auto.add_argument("--test", choices=["ha", "new"], default="ha")
+    auto.add_argument("--no-upload", action="store_true")
+    auto.add_argument(
+        "--roles",
+        nargs="+",
+        choices=["router", "control", "answers"],
+        default=["router", "control", "answers"],
+        help="what the model will do (router only: no commands and answers are generated)",
+    )
+    model = sub.add_parser(
+        "router-model", help="Assist Router's router model in Home Assistant (JSON)"
+    )
+    model.add_argument("--use", help="a model of the home Ollama to use as the router model")
+    model.add_argument("--restore", action="store_true", help="the model used before --use")
 
     smoke = sub.add_parser("smoke", help="quick check of the whole road (own workspace)")
     smoke.add_argument("--model", default="e2b")
@@ -152,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
     if command == "fetch":
         from . import ha_inputs
 
-        print(json.dumps(ha_inputs.fetch(ws), ensure_ascii=False, indent=2))
+        print(json.dumps(ha_inputs.fetch_all(ws), ensure_ascii=False, indent=2))
         return 0
     if command == "router":
         from . import ha_inputs, router_source
@@ -163,6 +211,24 @@ def main(argv: list[str] | None = None) -> int:
         router_source.fetch(ws.root, version)
         settings = load_settings(ws)
         print(json.dumps(router_source.state(ws.root, settings["router_repo_setting"], version)))
+        return 0
+    if command == "auto":
+        from . import auto
+
+        return auto.run(
+            ws, args.dataset, args.models, args.test, not args.no_upload, tuple(args.roles)
+        )
+    if command == "router-model":
+        from . import assist_router_model, ha_client
+
+        client = ha_client.Client(ha_client.load_connection(ws), ws)
+        if args.use:
+            result = assist_router_model.use(client, ws, args.use)
+        elif args.restore:
+            result = assist_router_model.restore(client, ws)
+        else:
+            result = assist_router_model.current(client)
+        print(json.dumps(result, ensure_ascii=False))
         return 0
     if command == "studio":
         from .studio.server import serve as serve_studio
@@ -204,6 +270,67 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         print(json.dumps(cases, ensure_ascii=False))
+        return 0
+    if command == "language":
+        from . import language_tool
+        from .config import router_repo
+
+        repo = Path(args.router_repo) if args.router_repo else router_repo(load_settings(ws))
+        if args.action == "new":
+            answers = Path(args.answers) if args.answers else None
+            result: Any = language_tool.new(ws, args.code, repo, args.home, answers)
+            print(json.dumps(result, ensure_ascii=False, indent=1))
+            return 0
+        found = language_tool.check(ws, args.code, repo)
+        for part, problems in found.items():
+            print(f"{part}: " + ("ready" if not problems else f"{len(problems)} problems"))
+            for problem in problems:
+                print(f"  - {problem}")
+        return 1 if any(found.values()) else 0
+    if command == "teacher":
+        from . import teacher as teacher_module
+
+        if args.action == "keys":
+            result: Any = {p: teacher_module.has_key(ws.root, p) for p in teacher_module.KEY_ENV}
+        else:
+            result = teacher_module.check(load_settings(ws), ws.root, args.role)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+    if command == "handoff":
+        from . import handoff as handoff_module
+
+        ctx = context.make(ws)
+        if args.action == "export":
+            out = Path(args.out) if args.out else None
+            result = handoff_module.export(ctx, args.role, out, args.per_topic)
+        else:
+            if not args.file:
+                raise SystemExit("handoff import: the file with the answers")
+            result = handoff_module.import_answers(ctx, args.role, Path(args.file))
+        print(json.dumps(result, ensure_ascii=False, indent=1))
+        return 0
+    if command == "languages":
+        from . import languages
+
+        if args.check:
+            folder = Path(args.check)
+            folder = folder if folder.is_dir() else languages.FOLDER / args.check
+            lacking = languages.problems(folder.resolve())
+            print("\n".join(lacking) if lacking else f"{folder.name}: complete")
+            return 1 if lacking else 0
+        print(" ".join(languages.available()))
+        return 0
+    if command == "triggers":
+        from .generate import router as router_gen
+
+        rows = router_gen.trigger_report(context.make(ws))
+        if args.json:
+            print(json.dumps(rows, ensure_ascii=False, indent=1))
+        else:
+            for row in rows:
+                mark = "" if row["known_topic"] else "  !! not in router.yaml"
+                print(f"{row['key']:40} {row['topic'] or '-':20} {row['how']:9} "
+                      f"{row['alias'][:40]}{mark}")  # fmt: skip
         return 0
     if command == "snapshot":
         return pipeline.run(ws, ["snapshot"], "none", [])

@@ -16,8 +16,8 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 playwright = pytest.importorskip("playwright.sync_api")
 
-VIEWS = ["overview", "ha", "router", "tests", "test/test1", "generate", "datasets", "dataset/demo", "train", "live",
-         "jobs", "runs", "run/demo-e4b", "compare", "try", "settings", "settings/ollama", "settings/generate",
+VIEWS = ["overview", "auto", "ha", "router", "tests", "test/test1", "generate", "datasets", "dataset/demo", "train", "live",
+         "jobs", "runs", "run/demo-e4b", "compare", "try", "settings", "settings/ollama", "settings/teacher", "settings/generate",
          "settings/test", "settings/holdout", "settings/dataset", "settings/export", "settings/evaluate",
          "settings/models", "settings/models/e4b", "power", "machine", "account"]  # fmt: skip
 
@@ -32,6 +32,10 @@ def studio(tmp_path_factory):
     server.shutdown()
 
 
+# the tour starts by itself the first time; the tests of other things open the studio as seen before
+TOUR_SEEN = "try { localStorage.setItem('router-trainer-studio-tour', 'done') } catch (e) {}"
+
+
 class studio_url:  # the running demo server, for tests that steer the studio itself
     server = None
 
@@ -44,6 +48,7 @@ def page(studio):
         except Exception as err:  # no Google Chrome on this computer
             pytest.skip(f"Chrome: {err}")
         context = browser.new_context(viewport={"width": 1500, "height": 900})
+        context.add_init_script(TOUR_SEEN)
         page = context.new_page()
         errors = []
         page.on("pageerror", lambda err: errors.append(str(err)))
@@ -114,6 +119,21 @@ def test_a_setting_goes_to_the_draft_and_is_saved_with_its_history(page) -> None
     page.wait_for_selector("[data-draft-state=clean]")
 
 
+def test_each_role_chooses_its_teacher(page) -> None:
+    page.evaluate("location.hash = '#/settings/teacher'")
+    page.select_option("[data-teacher-provider=writer]", "claude")
+    page.wait_for_selector("[data-setting='teacher.writer.effort']")  # Claude only
+    page.select_option("[data-teacher-provider=judge]", "manual")
+    page.wait_for_selector("[data-handoff-export=judge]")  # judging by hand: export / import
+    assert page.locator("[data-handoff-export=writer]").count() == 0  # the writer is not manual
+    assert page.locator("[data-teacher-key=claude]").get_attribute("type") == "password"
+    side = page.locator("[data-side-yaml-text]").input_value()
+    assert "provider: claude" in side and "provider: manual" in side
+    page.click("[data-discard]")
+    page.click("[data-ask-ok]")
+    page.wait_for_selector("[data-draft-state=clean]")
+
+
 def test_the_yaml_on_the_side_changes_the_form(page) -> None:
     page.evaluate("location.hash = '#/settings/holdout'")
     side = page.locator("[data-side-yaml-text]")
@@ -139,6 +159,7 @@ def test_a_trusted_network_opens_without_the_login_and_without_log_out(studio) -
             except Exception as err:
                 pytest.skip(f"Chrome: {err}")
             page = browser.new_page(viewport={"width": 1500, "height": 900})
+            page.add_init_script(TOUR_SEEN)
             errors = []
             page.on("pageerror", lambda err: errors.append(str(err)))
             page.goto(f"{studio}/login")
@@ -437,6 +458,7 @@ def test_every_view_draws_without_long_tasks(studio) -> None:
         except Exception as err:
             pytest.skip(f"Chrome: {err}")
         page = browser.new_context(viewport={"width": 1500, "height": 900}).new_page()
+        page.add_init_script(TOUR_SEEN)
         page.add_init_script("""
           window.__longTasks = [];
           new PerformanceObserver((list) => { for (const e of list.getEntries()) window.__longTasks.push(e.duration); })
@@ -523,6 +545,7 @@ def test_a_narrow_window_starts_with_the_right_column_folded(studio) -> None:
         except Exception as err:
             pytest.skip(f"Chrome: {err}")
         page = browser.new_context(viewport={"width": 820, "height": 900}).new_page()
+        page.add_init_script(TOUR_SEEN)
         page.goto(f"{studio}/login")
         page.fill("input[name=user]", "demo")
         page.fill("input[name=password]", "demo")
@@ -530,3 +553,136 @@ def test_a_narrow_window_starts_with_the_right_column_folded(studio) -> None:
         page.wait_for_selector("[data-tree]")
         page.wait_for_selector("[data-folded=right]")
         browser.close()
+
+
+def test_automatic_training_has_one_start_and_waits_for_a_result(page) -> None:
+    page.evaluate("location.hash = '#/auto'")
+    page.wait_for_selector("[data-auto-start]")
+    assert page.locator("[data-auto-name]").input_value().startswith("home-")
+    page.click("[data-auto-test] [data-value='new']")
+    assert page.get_attribute("[data-auto-test] [data-value='new']", "aria-pressed") == "true"
+    page.wait_for_selector("[data-router-model]")
+    assert page.locator("[data-auto-result]").count() == 0  # no automatic run yet
+    page.evaluate("location.hash = '#/train'")
+    page.wait_for_selector("[data-view='train'] > *")
+    page.wait_for_timeout(500)
+    assert page.evaluate("location.hash") == "#/train"  # the summary arriving does not pull it back
+
+
+# --- the tour and the lessons (gpu-studio.md section 5a) ----------------------------------------------------
+
+
+def _fresh_page(studio, p, width=1500):
+    """A browser that never saw the studio: the tour starts by itself."""
+    try:
+        browser = p.chromium.launch(channel="chrome")
+    except Exception as err:  # no Google Chrome on this computer
+        pytest.skip(f"Chrome: {err}")
+    page = browser.new_context(viewport={"width": width, "height": 900}).new_page()
+    page.goto(f"{studio}/login")
+    page.fill("input[name=user]", "demo")
+    page.fill("input[name=password]", "demo")
+    page.click("button[type=submit]")
+    page.wait_for_selector("[data-tree]")
+    return browser, page
+
+
+def test_the_tour_starts_by_itself_once_and_again_from_the_gear(studio) -> None:
+    with playwright.sync_playwright() as p:
+        browser, page = _fresh_page(studio, p)
+        page.wait_for_selector("router-trainer-tour [data-tour-bubble='welcome']")
+        page.click("router-trainer-tour [data-tour-next]")
+        page.wait_for_selector("router-trainer-tour [data-tour-frame='tree']")
+        assert "Ctrl/⌘+B" in page.locator("router-trainer-tour [data-tour-bubble]").inner_text()
+        page.keyboard.press("ArrowRight")
+        page.wait_for_selector("router-trainer-tour [data-tour-frame='middle']")
+        page.keyboard.press("Escape")
+        page.wait_for_selector("router-trainer-tour", state="detached")
+        page.reload()
+        page.wait_for_selector("[data-tree]")
+        page.wait_for_timeout(500)
+        assert page.locator("router-trainer-tour").count() == 0  # seen: not again by itself
+        page.click("[data-settings]")
+        page.click("[data-gear-tour]")
+        page.wait_for_selector("router-trainer-tour [data-tour-bubble='welcome']")
+        page.click("router-trainer-tour [data-tour-skip]")
+        page.wait_for_selector("router-trainer-tour", state="detached")
+        browser.close()
+
+
+def test_every_tour_step_frames_its_part(page) -> None:
+    page.click("[data-settings]")
+    page.click("[data-gear-tour]")
+    steps = page.evaluate("import('/static/tour.js').then((m) => m.TOUR_STEPS.map((s) => s.key))")
+    shown = page.locator("router-trainer-tour [data-tour-count]").inner_text()
+    count = int(re.search(r"(\d+)\D*$", shown)[1])
+    assert count >= len(steps) - 1  # only a part not on the demo's screen may be left out
+    for _ in range(count):
+        bubble = page.locator("router-trainer-tour [data-tour-bubble]")
+        key = bubble.get_attribute("data-tour-bubble")
+        if key != "welcome":
+            page.wait_for_selector(f"router-trainer-tour [data-tour-frame='{key}']")
+        assert not bubble.inner_text().count("studio_tour_"), key  # every text is there
+        page.click("router-trainer-tour [data-tour-next]")
+    page.wait_for_selector("router-trainer-tour", state="detached")
+
+
+@pytest.mark.parametrize("language", ["pl", "en"])
+def test_every_lesson_step_finds_its_part_on_the_demo(page, language) -> None:
+    if language == "pl":
+        page.click("[data-settings]")
+        page.click("[data-gear-language='pl']")
+        page.keyboard.press("Escape")
+    lessons = page.evaluate(
+        "import('/static/lessons.js').then((m) => m.LESSONS.map((l) => [l.key, l.steps.map((s) => s.key)]))"
+    )
+    assert len(lessons) >= 17
+    for key, steps in lessons:
+        page.click("[data-settings]")
+        page.click("[data-gear-lessons]")
+        page.click(f"dialog[data-dialog=lessons] [data-lesson='{key}']")
+        for step in steps:
+            page.wait_for_selector(f"router-trainer-tour [data-tour-frame='{step}']", timeout=5000)
+            text = page.locator("router-trainer-tour [data-tour-bubble]").inner_text()
+            assert "lesson_" not in text, (key, step)
+            page.click("router-trainer-tour [data-tour-next]")
+        page.wait_for_selector("router-trainer-tour", state="detached")
+        page.keyboard.press("Escape")  # ⚙ a lesson left open
+    page.click("[data-settings]")
+    page.click("[data-gear-lessons]")
+    assert page.locator("[data-lesson-done]").count() == len(
+        lessons
+    )  # each one gone through is marked
+
+
+def test_a_lesson_moves_on_with_the_click_of_its_framed_button(page) -> None:
+    page.click("[data-settings]")
+    page.click("[data-gear-lessons]")
+    page.click("dialog[data-dialog=lessons] [data-lesson='look']")
+    page.wait_for_selector("router-trainer-tour [data-tour-try]")  # it waits for ⚙
+    page.mouse.click(10, 450)  # the rest of the screen does nothing
+    assert page.locator("router-trainer-tour [data-tour-frame='gear']").count() == 1
+    page.click("[data-settings]")
+    page.wait_for_selector("router-trainer-tour [data-tour-frame='choices']")
+    page.click("router-trainer-tour [data-tour-next]")  # Next does not close ⚙
+    page.wait_for_selector("router-trainer-tour [data-tour-frame='learn']")
+    assert page.locator("[data-gear-box]").count() == 1
+    page.click("router-trainer-tour [data-tour-next]")
+    page.wait_for_selector("router-trainer-tour", state="detached")
+    page.keyboard.press("Escape")
+    page.click("[data-settings]")
+    page.click("[data-gear-lessons]")
+    assert page.locator("[data-lesson='look'] [data-lesson-done]").count() == 1
+
+
+def test_the_help_of_a_card_shows_its_lesson(page) -> None:
+    page.evaluate("location.hash = '#/ha'")
+    page.click("[data-view='ha'] [data-help='inputs']")
+    page.click("[data-help-lesson='connect']")
+    page.wait_for_selector("router-trainer-tour [data-tour-frame='url']")
+    page.fill("[data-ha-url]", "http://ha.example:8123")
+    page.keyboard.press("ArrowLeft")  # typing in a framed field keeps its keys
+    page.keyboard.press("Enter")
+    assert page.locator("router-trainer-tour [data-tour-frame='url']").count() == 1
+    page.keyboard.press("Escape")
+    page.wait_for_selector("router-trainer-tour", state="detached")

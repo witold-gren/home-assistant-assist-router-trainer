@@ -110,7 +110,7 @@ RUN ROUTER_REPO=/opt/assist-router VENV_DIR=/opt/venv TRAIN_VENV_DIR=/opt/venv-t
     ./scripts/setup.sh --deps-only \
     && rm -rf /tmp/uv-cache \
     # self-test: both environments import (Unsloth itself needs a GPU - make doctor checks it on the machine)
-    && /opt/venv/bin/python -c "import homeassistant, hassil, yaml, aiohttp" \
+    && /opt/venv/bin/python -c "import homeassistant, hassil, yaml, aiohttp, anthropic" \
     && /opt/venv-train/bin/python -c "import torch, transformers, peft, trl, gguf; print('torch', torch.__version__)" \
     && /opt/tools/ollama/bin/ollama --version
 

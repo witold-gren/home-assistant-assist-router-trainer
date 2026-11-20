@@ -30,6 +30,21 @@ ollama:
   local_port: 11535                     # Ollama of the trainer (tools/ollama) on the GPU box
   version: 0.34.1                       # same version as the home Ollama (scripts/setup.sh)
 
+# Who writes and who judges the data (docs: The teacher). Each role on its own:
+#   writer      - paraphrases, contrast pairs, commands, reference answers, knowledge questions
+#   judge       - checks and labels: topics (label check, triggers, log, recordings), parsing
+#                 commands back, facts of the generated test
+#   test_writer - the generated test (another model than the writer, so the test does not favour it)
+# provider: ollama (the trainer's own, models from `ollama:` above) | openai (any OpenAI-compatible
+#   API: base_url + model) | claude (Anthropic API, default claude-opus-5-5) | manual (by hand:
+#   router-trainer handoff export / import). An API key is saved in the studio (Settings → Teacher,
+#   workspace/secrets, mode 600) or taken from OPENAI_API_KEY / ANTHROPIC_API_KEY. An API gets the
+#   household, the entity names and the logged questions - choose it knowingly.
+teacher:
+  writer: {provider: ollama, model: ""}         # "" = ollama.teacher
+  judge: {provider: ollama, model: ""}          # "" = ollama.teacher
+  test_writer: {provider: ollama, model: ""}    # "" = ollama.test_writer
+
 generate:
   seed: 42
   router:
@@ -42,6 +57,19 @@ generate:
     max_per_topic: 900
     min_per_topic: 250
     noise: 0.3                   # share with speech-recognition noise (lower case, no accents, typos)
+    recordings: true             # the home's voice commands in inputs/recordings (WAV) through Whisper
+    asr_per_topic: 40            # natural questions per topic read by Piper and written by Whisper
+    check_labels: true           # teacher sentences checked with the router's own prompt; another
+                                 #   topic = dropped (true = paraphrase + contrast, or a source list)
+    contrast:                    # sentences on both sides of the borders that get mixed up
+      per_side: 40               #   per topic of a pair (0 = off)
+      pairs: auto                #   auto = from the errors of the last evaluations, or [[a, b], ...]
+      max_pairs: 12
+      extra: []                  #   pairs always added, also with auto: [[czytania, wiadomosci], ...]
+    speech:                      # Piper and Whisper of Home Assistant (Wyoming); empty = the home
+      piper: ""                  #   Ollama's host, ports 10200 and 10300
+      whisper: ""
+      voices: []                 # empty = every voice of the language Piper has
   control:
     labels: 1500                 # commands planned from your home (intent, area, device, value)
     sentences_per_label: 3       # the teacher writes them; kept only if it parses them back the same
